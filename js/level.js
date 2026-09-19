@@ -110,9 +110,11 @@ const stairAscent = () =>
 // --- Göteborg (18,900px: the end of the utspring to the Golem's line) ----
 const PLATFORM_D_X = UTSPRING_END_X + 2000; // 14720
 const PLATFORM_E_X = PLATFORM_D_X + 1800; // 16520 -- clustered with D
-const INBOX_X = PLATFORM_E_X + 3500; // 20020 -- quiet stretch
-const EXCHANGE_PLATFORM_X = INBOX_X + 2500; // 22520 -- carries the exchange enemy
-const PLATFORM_F_X = EXCHANGE_PLATFORM_X + 3500; // 26020 -- quiet stretch
+// 26020. Previously derived through the inbox and exchange placements,
+// which now live in the Clinic and USA sections below (task 6.8's section
+// order). The absolute position is unchanged -- this task moves no
+// platform and changes no level length.
+const PLATFORM_F_X = PLATFORM_E_X + 9500; // 26020 -- quiet stretch
 const PLATFORM_G_X = PLATFORM_F_X + 1600; // 27620 -- clustered with F
 const GOLEM_COMIC_X = PLATFORM_G_X + 3500; // 31120
 const GOLEM_ACTIVATION_X = GOLEM_COMIC_X + 500; // 31620 = UTSPRING_END_X + 18,900 ✓
@@ -127,6 +129,12 @@ const PLATFORM_H_X = GOLEM_EXIT_X + 1000; // 33360
 const PLATFORM_I_X = PLATFORM_H_X + 900; // 34260 -- clustered with H
 const PLATFORM_J_X = PLATFORM_I_X + 4000; // 38260 -- quiet stretch
 const PLATFORM_K_X = PLATFORM_J_X + 4500; // 42760 -- quiet stretch
+// The two encounters this stretch previously had none of: the admin
+// enemy belongs to the Clinic section and the exchange enemy to USA
+// (task 6.8). Both sit in the quiet gaps between existing platforms, so
+// nothing moved to make room for them.
+const CLINIC_INBOX_X = 36200; // between platforms I and J
+const USA_EXCHANGE_PLATFORM_X = 40800; // between the USA boundary and platform K
 const PLATFORM_L_X = PLATFORM_K_X + 1200; // 43960 -- clustered with K
 const GRADUATION_COMIC_X = PLATFORM_L_X + 1400; // 45360
 const GRADUATION_ACTIVATION_X = GOLEM_EXIT_X + 13500; // 45860 = GOLEM_EXIT_X + 13,500 ✓
@@ -136,7 +144,69 @@ const GRADUATION_X = GRADUATION_ACTIVATION_X + ARENA_WIDTH; // 46460
 const ARMOUR_X = GRADUATION_X + GRADUATION.width + 200; // 46800
 const FINAL_COMIC_X = GRADUATION_X + GRADUATION.width + 300; // 46900
 
+// --- Background sections (task 6.8) ----------------------------------------
+// Eight sections, in level order. The order is deliberate and is NOT
+// chronological: the Research Golem sits earlier than the events it
+// follows in real life, because putting it immediately before the
+// Graduation boss would stack two bosses back to back with almost no
+// level between them. Pacing wins over chronology. Do not "fix" it.
+//
+// This also means the roster in AGENTS.md §3 -- which lists the Endless
+// Inbox and exchange enemies under Göteborg, before boss 1 -- no longer
+// matches where they stand. The section order here supersedes it.
+//
+// Boundaries are measured off the landmarks that already exist, so moving
+// the staircase or an arena carries its section with it. Each is one line.
+//
+//   #  section                        start    length   at 360 px/s
+//   1  Lund -- town                       0    4,200       11.7 s
+//   2  Polhem -- the school           4,200    5,730       15.9 s
+//   3  Lund -- the utspring           9,930    2,790        7.8 s
+//   4  Göteborg -- the city          12,720   18,400       51.1 s
+//   5  Handels -- Golem arena        31,120    1,780        4.9 s
+//   6  Clinic -- reception           32,900    6,200       17.2 s
+//   7  USA -- the stadium            39,100    6,260       17.4 s
+//   8  GU -- Graduation arena        45,360    2,040        5.7 s
+//                                            -------      -------
+//                                            47,400      131.7 s
+const SECTION_POLHEM_X = 4200;
+const SECTION_LUND_RETURN_X = STAIRCASE_ASCENT_X - 1000; // 9930
+// UTSPRING_END_X (12720) starts Göteborg -- the backdrop still swaps
+// exactly where the studentmössa is earned.
+const SECTION_HANDELS_X = GOLEM_COMIC_X; // 31120 -- the interior opens as the comic plays
+const SECTION_CLINIC_X = SUIT_X + 340; // 32900 -- once the suit is collected
+const SECTION_USA_X = 39100;
+const SECTION_GU_X = GRADUATION_COMIC_X; // 45360 -- same framing as Handels
+const LEVEL_END_X = FINAL_COMIC_X + 500; // 47400
+
+// Landmark placements. Parallax is per placement, not per landmark: how
+// far away a thing reads is a layout decision, and the same object could
+// sit on the horizon in one place and close by in another.
+const UF_STAND_X = 1800;
+const POLHEM_MECH_X = 6200;
+const STADIUM_X = 41400;
+
 export const LEVEL = [
+  // Sections are level data: an x-range plus which background to wear.
+  // The look itself (layers, parallax, colours) is a tunable and lives in
+  // config.js BACKGROUNDS. Adding, reordering or resizing a section is a
+  // data edit here; it is never a code edit.
+  { type: 'background-section', name: 'Lund — town', xStart: 0, xEnd: SECTION_POLHEM_X, background: 'lund-town' },
+  { type: 'background-section', name: 'Polhem — the school', xStart: SECTION_POLHEM_X, xEnd: SECTION_LUND_RETURN_X, background: 'polhem-school' },
+  { type: 'background-section', name: 'Lund — the utspring', xStart: SECTION_LUND_RETURN_X, xEnd: UTSPRING_END_X, background: 'lund-utspring' },
+  { type: 'background-section', name: 'Göteborg — the city', xStart: UTSPRING_END_X, xEnd: SECTION_HANDELS_X, background: 'goteborg-city' },
+  { type: 'background-section', name: 'Handels — Golem arena', xStart: SECTION_HANDELS_X, xEnd: SECTION_CLINIC_X, background: 'handels-interior' },
+  { type: 'background-section', name: 'Clinic — reception', xStart: SECTION_CLINIC_X, xEnd: SECTION_USA_X, background: 'clinic-reception' },
+  { type: 'background-section', name: 'USA — the stadium', xStart: SECTION_USA_X, xEnd: SECTION_GU_X, background: 'usa-stadium' },
+  { type: 'background-section', name: 'GU — Graduation arena', xStart: SECTION_GU_X, xEnd: LEVEL_END_X, background: 'gu-ceremony' },
+
+  // Landmarks: one-off background objects at a single x, each scrolling
+  // at its own rate. Not tiled, not gameplay -- nothing collides with
+  // them.
+  { type: 'landmark', landmark: 'uf-stand', x: UF_STAND_X, parallax: 0.6 },
+  { type: 'landmark', landmark: 'polhem-mech', x: POLHEM_MECH_X, parallax: 0.25 },
+  { type: 'landmark', landmark: 'stadium', x: STADIUM_X, parallax: 0.35 },
+
   { type: 'player-spawn', x: SPAWN_X },
 
   // Lund trash: one behaviour (identical createTrashEnemy/updateEnemy/
@@ -194,10 +264,6 @@ export const LEVEL = [
   // so for them it changes nothing.
   { type: 'utspring-trigger', x: STAIRCASE_START_X, y: STAIR_TOP_Y },
 
-  // One continuous level, two places (AGENTS.md §3): the backdrop swaps
-  // right where the studentmössa is earned, no loading break.
-  { type: 'section-transition', x: UTSPRING_END_X, section: 'goteborg' },
-
   // The checkpoint sits at the END of the sequence, after control
   // returns: someone who dies shortly afterwards resumes here already
   // wearing the studentmössa and never replays the cutscene. (It could
@@ -209,17 +275,10 @@ export const LEVEL = [
   { type: 'platform', x: PLATFORM_D_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_E_X, y: platformTop(CLEARANCE_HIGH) },
 
-  { type: 'enemy-inbox', x: INBOX_X },
-
-  //   exchange  now carried on a platform (task C) -- same patrol logic,
-  //             just elevated, so it reads as a different encounter from
-  //             ground level despite being identical code.
-  { type: 'platform', x: EXCHANGE_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
-  {
-    type: 'enemy-exchange',
-    x: EXCHANGE_PLATFORM_X + (PLATFORM.width - ENEMY_EXCHANGE.width) / 2,
-    y: platformTop(CLEARANCE_LOW) - ENEMY_EXCHANGE.height,
-  },
+  // The Endless Inbox and the exchange enemy used to stand here. Task
+  // 6.8's section order puts the admin enemy in the Clinic and the
+  // exchange enemy in USA, both of which come AFTER the Research Golem,
+  // so both moved down this file. See the note on the section table.
 
   { type: 'platform', x: PLATFORM_F_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_G_X, y: platformTop(CLEARANCE_HIGH) },
@@ -244,7 +303,22 @@ export const LEVEL = [
   // inventing a new enemy.
   { type: 'platform', x: PLATFORM_H_X, y: platformTop(CLEARANCE_HIGH) },
   { type: 'platform', x: PLATFORM_I_X, y: platformTop(CLEARANCE_LOW) },
+
+  // The Endless Inbox: can't be shot down, only gotten past (AGENTS.md
+  // §3 -- the admin summer job).
+  { type: 'enemy-inbox', x: CLINIC_INBOX_X },
   { type: 'platform', x: PLATFORM_J_X, y: platformTop(CLEARANCE_HIGH) },
+
+  //   exchange  carried on a platform (task C) -- same patrol logic, just
+  //             elevated, so it reads as a different encounter from
+  //             ground level despite being identical code.
+  { type: 'platform', x: USA_EXCHANGE_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
+  {
+    type: 'enemy-exchange',
+    x: USA_EXCHANGE_PLATFORM_X + (PLATFORM.width - ENEMY_EXCHANGE.width) / 2,
+    y: platformTop(CLEARANCE_LOW) - ENEMY_EXCHANGE.height,
+  },
+
   { type: 'platform', x: PLATFORM_K_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_L_X, y: platformTop(CLEARANCE_HIGH) },
 

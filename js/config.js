@@ -26,12 +26,162 @@ export const WORLD = {
   groundY: 620,
 };
 
-// Two places, one continuous level (AGENTS.md §3): only the backdrop swaps
-// at a section-transition entry in level.js, never a loading break. Ground
-// color stays constant -- only the "sky" differs.
-export const SECTIONS = {
-  lund: { backgroundColor: '#243247' },
-  goteborg: { backgroundColor: '#33415c' },
+// Background sections (PLAN.md task 6.8, brought forward). One continuous
+// level, no loading break (AGENTS.md §3) -- only the scenery changes, and
+// it changes because a player cannot judge distance against unchanging
+// scenery. Changing scenery is what communicates progress.
+//
+// WHERE each section starts and ends is level layout, so it lives in
+// level.js. WHAT it looks like is a tunable, so it lives here. Adding a
+// section means one entry in each: a range there, a look here.
+//
+// Every look is a stack of exactly three layers, far to near, each with
+// its own parallax factor and its own source. Sources are:
+//
+//   { type: 'color',      color }             flat field
+//   { type: 'gradient',   from, to }          vertical, sky-top to ground
+//   { type: 'silhouette', color, tileWidth, heights }
+//
+// A silhouette is one strip of bars standing on the ground line, repeated
+// across the whole section -- `heights` are pixel heights spread evenly
+// across `tileWidth`, and a 0 is a gap. Everything TILES horizontally:
+// there are no oversized images now and there must be none later, so a
+// section of any length costs the same.
+//
+// These are placeholders, deliberately flat and obvious. When the real
+// artwork arrives it drops in as data -- a fourth source type taking an
+// image path, with the tiling and parallax already handled.
+export const BACKGROUND = {
+  // px, centred on each boundary: the band over which the outgoing
+  // section fades into the incoming one. A hard cut mid-run is jarring.
+  blendBandWidth: 400,
+};
+
+// Standard parallax trio. Per-layer values below so any one section can
+// deviate, but keeping them equal is what makes the level feel coherent.
+const FAR = 0.15;
+const MID = 0.35;
+const NEAR = 0.6;
+
+export const BACKGROUNDS = {
+  // 1 -- Lund, the town. Dark base, pale line-art skyline (AGENTS.md §3).
+  'lund-town': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#161d2b' } },
+      { parallax: MID, source: { type: 'gradient', from: '#161d2b', to: '#243247' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#2e3d55', tileWidth: 420, heights: [80, 130, 60, 150, 95, 70, 120, 55] } },
+    ],
+  },
+
+  // 2 -- Polhem, the school. Warmer brick, and the roofline goes blocky:
+  // fewer, wider, flatter shapes than the town's.
+  'polhem-school': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#2a2029' } },
+      { parallax: MID, source: { type: 'gradient', from: '#2a2029', to: '#4a3230' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#5a3b33', tileWidth: 400, heights: [0, 170, 170, 170, 0, 140, 140, 0] } },
+    ],
+  },
+
+  // 3 -- Lund again, for the utspring. Same skyline family as 1 on
+  // purpose -- you are back where you started -- but lit brighter: this
+  // is the celebration.
+  'lund-utspring': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#24304a' } },
+      { parallax: MID, source: { type: 'gradient', from: '#24304a', to: '#3a4a6b' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#54678c', tileWidth: 420, heights: [80, 130, 60, 150, 95, 70, 120, 55] } },
+    ],
+  },
+
+  // 4 -- Göteborg. Cooler, and denser: more bars, narrower, taller.
+  'goteborg-city': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#131c2e' } },
+      { parallax: MID, source: { type: 'gradient', from: '#131c2e', to: '#22314d' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#31435f', tileWidth: 300, heights: [110, 180, 90, 200, 140, 170, 100, 160, 130, 190] } },
+    ],
+  },
+
+  // 5 -- Handels, the Research Golem arena. An interior, so the far layer
+  // is a flat wall and NOT a sky gradient -- that alone reads as "indoors"
+  // after four outdoor sections. Gold columns near. You have arrived
+  // somewhere, not walked into more corridor.
+  'handels-interior': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#101a30' } },
+      { parallax: MID, source: { type: 'gradient', from: '#16233d', to: '#1d2b49' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#a98b4a', tileWidth: 360, heights: [0, 240, 0, 240, 0, 240] } },
+    ],
+  },
+
+  // 6 -- the clinic reception. Pale teal and flat: the one bright, empty,
+  // clinical stretch in the level. Kept muted rather than white so the
+  // player and projectiles still read against it.
+  'clinic-reception': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#7fa8a5' } },
+      { parallax: MID, source: { type: 'color', color: '#8fb7b3' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#6d938f', tileWidth: 480, heights: [60, 60, 60, 0, 60, 60, 60, 0] } },
+    ],
+  },
+
+  // 7 -- USA, the stadium. Open bright sky and a low wide bowl -- the
+  // widest, lowest silhouette in the level, against the tallest sky.
+  'usa-stadium': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#5b8fc9' } },
+      { parallax: MID, source: { type: 'gradient', from: '#5b8fc9', to: '#a9cbe8' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#3f5d78', tileWidth: 640, heights: [50, 70, 80, 80, 80, 80, 70, 50] } },
+    ],
+  },
+
+  // 8 -- GU, the Graduation arena. Dark ceremonial blue, sparse tall
+  // columns. The other arena, and it should read as one.
+  'gu-ceremony': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#0e1730' } },
+      { parallax: MID, source: { type: 'gradient', from: '#0e1730', to: '#1a2748' } },
+      { parallax: NEAR, source: { type: 'silhouette', color: '#2f3f6b', tileWidth: 240, heights: [0, 300, 0, 0] } },
+    ],
+  },
+};
+
+// Landmarks: one-off background objects placed at a single x rather than
+// tiled, each scrolling at its own parallax rate (set per placement in
+// level.js, since how far away a thing reads is a layout decision).
+// Labelled placeholder rectangles until the art pass.
+export const LANDMARK = {
+  labelFont: '13px sans-serif',
+  labelColor: '#f7f3e3',
+  labelGap: 8, // px between the label's baseline and the box top
+  types: {
+    // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
+    // background". Never abbreviated on first appearance.
+    'uf-stand': { label: 'UF (Junior Achievement Sweden) STAND', width: 200, height: 130, color: '#c9a227' },
+    // AGENTS.md §3: "the Polhem mech sleeping on the skyline".
+    'polhem-mech': { label: 'POLHEM MECH (asleep)', width: 460, height: 340, color: '#46506b' },
+    stadium: { label: 'STADIUM', width: 900, height: 260, color: '#2f4a63' },
+  },
+};
+
+// Development pacing overlay (PLAN.md task 6.8). Turns pacing from a
+// feeling into a number that can be checked against the target section
+// durations. A development tool, not UI -- it is not styled, and with
+// `overlay` false nothing about it reaches the screen.
+//
+// MUST stay false in anything sent to anyone.
+export const DEBUG = {
+  overlay: false,
+  font: '14px monospace',
+  color: '#8fe3a0',
+  backgroundColor: 'rgba(13, 17, 23, 0.72)',
+  width: 300,
+  lineHeight: 18,
+  paddingX: 10,
+  paddingY: 8,
+  marginX: 24,
+  marginY: 24, // from the BOTTOM edge -- the HP pips own the top-left
 };
 
 export const PLAYER = {

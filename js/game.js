@@ -1,6 +1,6 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, SECTIONS, STAIRCASE, CONFETTI, HUD } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
 import { createTrashEnemy, createInboxEnemy, createExchangeEnemy, updateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
@@ -69,7 +69,14 @@ let pickups;
 let platforms; // task C: { x, y, width, height }, one-way landable rectangles
 let checkpoints; // sorted ascending by x
 let nextCheckpointIndex;
-let sectionBounds; // sorted ascending by x: [{ x, section }], x = -Infinity is section 'lund'
+let backgroundSections; // sorted ascending: [{ name, xStart, xEnd, background }]
+let landmarks; // [{ landmark, x, parallax }], drawn behind everything
+// Pacing instrumentation (task 6.8). Accumulated inside the fixed step,
+// so it stops dead while the tab is hidden and never counts time the
+// player wasn't there for (task 3.10).
+let levelElapsed = 0;
+let sectionElapsed = 0;
+let timedSectionIndex = -1;
 let utspringTrigger; // { x, markY } that hands control to the utspring, or null
 let comicTriggers; // sorted ascending by x: [{ x, comicId, next }]
 let nextComicTriggerIndex;
@@ -321,8 +328,12 @@ function loadLevel() {
   platforms = [];
   utspringTrigger = null;
   const checkpointXs = [];
-  const transitions = [];
+  const sections = [];
   const triggers = [];
+  landmarks = [];
+  levelElapsed = 0;
+  sectionElapsed = 0;
+  timedSectionIndex = -1;
 
   for (const entry of LEVEL) {
     const y = entryY(entry);
@@ -345,8 +356,10 @@ function loadLevel() {
       checkpointXs.push(entry.x); // AGENTS.md §6: invisible checkpoints at each pickup
     } else if (entry.type === 'checkpoint') {
       checkpointXs.push(entry.x);
-    } else if (entry.type === 'section-transition') {
-      transitions.push({ x: entry.x, section: entry.section });
+    } else if (entry.type === 'background-section') {
+      sections.push({ name: entry.name, xStart: entry.xStart, xEnd: entry.xEnd, background: entry.background });
+    } else if (entry.type === 'landmark') {
+      landmarks.push({ landmark: entry.landmark, x: entry.x, parallax: entry.parallax });
     } else if (entry.type === 'utspring-trigger') {
       utspringTrigger = { x: entry.x, markY: y };
     } else if (entry.type === 'comic-trigger') {
@@ -354,8 +367,8 @@ function loadLevel() {
     }
   }
 
-  transitions.sort((a, b) => a.x - b.x);
-  sectionBounds = [{ x: -Infinity, section: 'lund' }, ...transitions];
+  sections.sort((a, b) => a.xStart - b.xStart);
+  backgroundSections = sections;
 
   checkpointXs.sort((a, b) => a - b);
   checkpoints = checkpointXs.map((x) => ({ x, y: entryY({ type: 'checkpoint' }) }));
@@ -451,6 +464,7 @@ function step(dt) {
   advanceCheckpoint();
   handleDeathTransition();
   checkComicTriggers();
+  advancePacingTimers(dt);
   updateCamera(dt);
 }
 
@@ -655,6 +669,169 @@ function updateCamera(dt) {
   camera.zoom += (targetZoom - camera.zoom) * zoomEase;
 }
 
+// Which section a world x falls in. Sections are contiguous and sorted,
+// so the first one the x falls short of is the answer; anything past the
+// last section keeps wearing it.
+function sectionIndexAt(x) {
+  for (let i = 0; i < backgroundSections.length; i++) {
+    if (x < backgroundSections[i].xEnd) return i;
+  }
+  return backgroundSections.length - 1;
+}
+
+function advancePacingTimers(dt) {
+  levelElapsed += dt;
+  const index = sectionIndexAt(player.x);
+  if (index !== timedSectionIndex) {
+    timedSectionIndex = index;
+    sectionElapsed = 0;
+  }
+  sectionElapsed += dt;
+}
+
+// The world rectangle currently on screen. Everything below fills exactly
+// this, so a background costs the same whether its section is 2,000px
+// long or 20,000.
+function visibleWorldRect() {
+  const width = CANVAS.width / camera.zoom;
+  const height = CANVAS.height / camera.zoom;
+  return {
+    width,
+    height,
+    left: camera.x + (CANVAS.width - width) / 2,
+    top: camera.y + (CANVAS.height - height) / 2,
+  };
+}
+
+// Backgrounds are chosen by what is on screen rather than clipped to
+// their own x-range: a layer at parallax 0.15 does not sit still against
+// the world, so clipping it at a world boundary would tear. Instead one
+// section is drawn across the whole view, and inside a blend band the
+// next one is drawn over it at a rising alpha.
+//
+// The band -- not the section -- decides who is outgoing and who is
+// incoming, and that distinction matters. Picking "the section the view
+// is in" and fading its neighbour towards it reverses the roles at the
+// boundary, and because each background stacks three layers whose alphas
+// compound, the two halves do not meet: measured across this boundary the
+// incoming section jumped from about 75% back to 25% in one pixel of
+// movement -- a backwards flicker exactly where the crossfade exists to
+// prevent one. Anchoring on the band means alpha runs 0 -> 1 straight
+// through, and nothing swaps over mid-fade.
+//
+// At alpha 1 the incoming section must fully hide the outgoing one, so
+// every background needs at least one opaque full-view layer. All of them
+// have one (see config.js BACKGROUNDS). Bands must also not overlap, so
+// no section may be shorter than BACKGROUND.blendBandWidth.
+function drawBackground(ctx) {
+  if (!backgroundSections || backgroundSections.length === 0) return;
+
+  const refX = camera.x + CANVAS.width / 2;
+  const half = BACKGROUND.blendBandWidth / 2;
+
+  for (let i = 0; i < backgroundSections.length - 1; i++) {
+    const boundary = backgroundSections[i].xEnd;
+    if (refX > boundary - half && refX < boundary + half) {
+      const blend = (refX - (boundary - half)) / BACKGROUND.blendBandWidth; // 0 -> 1
+      drawBackgroundLayers(ctx, backgroundSections[i].background, 1);
+      drawBackgroundLayers(ctx, backgroundSections[i + 1].background, blend);
+      return;
+    }
+  }
+
+  drawBackgroundLayers(ctx, backgroundSections[sectionIndexAt(refX)].background, 1);
+}
+
+function drawBackgroundLayers(ctx, backgroundKey, alpha) {
+  const background = BACKGROUNDS[backgroundKey];
+  if (!background) return;
+  ctx.globalAlpha = alpha;
+  for (const layer of background.layers) drawBackgroundLayer(ctx, layer);
+  ctx.globalAlpha = 1;
+}
+
+// Parallax is applied horizontally only. Vertically the layer stays in
+// world space, which is what keeps a silhouette planted on the ground
+// line instead of drifting off it when the camera moves or the utspring
+// widens the view.
+function drawBackgroundLayer(ctx, layer) {
+  const view = visibleWorldRect();
+  const shift = camera.x * (1 - layer.parallax);
+  // In this translated space, the visible span starts here.
+  const left = view.left - shift;
+  const right = left + view.width;
+
+  ctx.save();
+  ctx.translate(shift, 0);
+  const source = layer.source;
+
+  if (source.type === 'color') {
+    ctx.fillStyle = source.color;
+    ctx.fillRect(left, view.top, view.width, view.height);
+  } else if (source.type === 'gradient') {
+    const gradient = ctx.createLinearGradient(0, 0, 0, WORLD.groundY);
+    gradient.addColorStop(0, source.from);
+    gradient.addColorStop(1, source.to);
+    ctx.fillStyle = gradient;
+    ctx.fillRect(left, view.top, view.width, view.height);
+  } else if (source.type === 'silhouette') {
+    drawSilhouette(ctx, source, left, right);
+  }
+
+  ctx.restore();
+}
+
+// One strip of bars standing on the ground line, repeated across the
+// visible span. Bars are spread evenly across tileWidth and a 0 height is
+// a gap. The +1 on each bar's width closes the seam between neighbours.
+function drawSilhouette(ctx, source, left, right) {
+  const { color, tileWidth, heights } = source;
+  const barWidth = tileWidth / heights.length;
+  ctx.fillStyle = color;
+  for (let tileX = Math.floor(left / tileWidth) * tileWidth; tileX < right; tileX += tileWidth) {
+    for (let i = 0; i < heights.length; i++) {
+      const height = heights[i];
+      if (height <= 0) continue;
+      ctx.fillRect(tileX + i * barWidth, WORLD.groundY - height, barWidth + 1, height);
+    }
+  }
+}
+
+// One-off background objects, each at its own parallax.
+//
+// A landmark is anchored to its own placement, which a tiled layer is
+// not. Tiled layers repeat forever, so where their offset lands does not
+// matter and `x - camera.x * parallax` is fine for them. Applying that
+// same formula to a single placed object puts it at its stated x only
+// when camera.x * parallax happens to land there: the Polhem mech, at
+// x 6200 and parallax 0.25, would not have come into view until the
+// camera reached x 24800, most of a level later. It was never on screen.
+//
+// So each landmark has a home -- the camera position that centres it --
+// and drifts from there at its own rate. Place one at an x and that is
+// where you meet it, whatever its parallax; parallax then only decides
+// how fast it slides past once you are there.
+function drawLandmarks(ctx) {
+  const view = visibleWorldRect();
+  for (const placement of landmarks) {
+    const spec = LANDMARK.types[placement.landmark];
+    if (!spec) continue;
+
+    const homeCameraX = placement.x - CANVAS.width / 2;
+    const drawX = placement.x + (camera.x - homeCameraX) * (1 - placement.parallax);
+    if (drawX + spec.width < view.left || drawX > view.left + view.width) continue;
+
+    const top = WORLD.groundY - spec.height;
+    ctx.fillStyle = spec.color;
+    ctx.fillRect(Math.round(drawX), Math.round(top), spec.width, spec.height);
+    ctx.fillStyle = LANDMARK.labelColor;
+    ctx.font = LANDMARK.labelFont;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(spec.label, Math.round(drawX + spec.width / 2), Math.round(top - LANDMARK.labelGap));
+  }
+}
+
 // Level isn't bounded yet (no end-of-level data), so background fills just
 // need to comfortably cover any reasonable play area. Task D's derived
 // layout runs to just under 47,000; 60,000 leaves comfortable margin.
@@ -679,7 +856,8 @@ function render() {
   ctx.scale(camera.zoom, camera.zoom);
   ctx.translate(-(camera.x + CANVAS.width / 2), -(camera.y + CANVAS.height / 2));
 
-  drawSections(ctx);
+  drawBackground(ctx);
+  drawLandmarks(ctx);
 
   ctx.fillStyle = GROUND_COLOR;
   ctx.fillRect(WORLD_RENDER_LEFT, WORLD.groundY, WORLD_RENDER_RIGHT - WORLD_RENDER_LEFT, CANVAS.height - WORLD.groundY);
@@ -702,6 +880,37 @@ function render() {
   drawPlayerHud(ctx);
   // Over everything, HUD included: the arrival flash is the whole screen.
   drawUtspringFlash(ctx);
+  drawDebugOverlay(ctx);
+}
+
+// Pacing overlay (task 6.8). Plain text in a corner, screen space, drawn
+// last. A development tool: with DEBUG.overlay false this returns before
+// touching the canvas, so nothing about it can reach a player.
+function drawDebugOverlay(ctx) {
+  if (!DEBUG.overlay) return;
+
+  const index = sectionIndexAt(player.x);
+  const section = backgroundSections[index];
+  const lines = [
+    `x ${Math.round(player.x)}`,
+    `section ${index + 1}/${backgroundSections.length}  ${section ? section.name : '-'}`,
+    `in section ${sectionElapsed.toFixed(1)}s`,
+    `level total ${levelElapsed.toFixed(1)}s`,
+  ];
+
+  const height = lines.length * DEBUG.lineHeight + DEBUG.paddingY * 2;
+  const x = DEBUG.marginX;
+  const y = CANVAS.height - DEBUG.marginY - height;
+
+  ctx.fillStyle = DEBUG.backgroundColor;
+  ctx.fillRect(x, y, DEBUG.width, height);
+  ctx.fillStyle = DEBUG.color;
+  ctx.font = DEBUG.font;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'alphabetic';
+  for (let i = 0; i < lines.length; i++) {
+    ctx.fillText(lines[i], x + DEBUG.paddingX, y + DEBUG.paddingY + (i + 1) * DEBUG.lineHeight - 4);
+  }
 }
 
 function drawConfetti(ctx) {
@@ -736,19 +945,6 @@ function drawPlayerHud(ctx) {
     ctx.fillStyle = i < player.hp ? HUD.filledColor : HUD.emptyColor;
     ctx.fillRect(x, HUD.marginY, HUD.hpPipSize, HUD.hpPipSize);
     ctx.strokeRect(x, HUD.marginY, HUD.hpPipSize, HUD.hpPipSize);
-  }
-}
-
-// One continuous level, two places (AGENTS.md §3): the backdrop swaps at
-// each section-transition entry in level.js, drawn in world space so the
-// boundary scrolls past naturally -- no loading break, nothing pauses.
-function drawSections(ctx) {
-  for (let i = 0; i < sectionBounds.length; i++) {
-    const bound = sectionBounds[i];
-    const left = bound.x === -Infinity ? WORLD_RENDER_LEFT : bound.x;
-    const right = i + 1 < sectionBounds.length ? sectionBounds[i + 1].x : WORLD_RENDER_RIGHT;
-    ctx.fillStyle = SECTIONS[bound.section].backgroundColor;
-    ctx.fillRect(left, 0, right - left, CANVAS.height);
   }
 }
 
