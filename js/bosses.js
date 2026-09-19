@@ -9,7 +9,7 @@
 // never touched by Graduation: AGENTS.md is explicit that mechanic is
 // Research-Golem-only.
 
-import { RESEARCH_GOLEM, GRADUATION, WORLD, TELEGRAPH, CLAIM_PHASE, PLAYER, PROJECTILE } from './config.js';
+import { RESEARCH_GOLEM, GRADUATION, WORLD, TELEGRAPH, CLAIM_PHASE, PLAYER, PROJECTILE, BOSS_PROJECTILE_LIFETIME } from './config.js';
 
 // AGENTS.md §4: every attack's wind-up must be 0.8-1.0s. Enforced once at
 // load time so a future pattern can't silently ship without a fair tell.
@@ -22,7 +22,7 @@ for (const [patternId, pattern] of Object.entries(RESEARCH_GOLEM.patterns)) {
   }
 }
 
-export function createResearchGolem(x, y) {
+export function createResearchGolem(x, y, activationX) {
   return {
     x,
     y,
@@ -30,6 +30,10 @@ export function createResearchGolem(x, y) {
     height: RESEARCH_GOLEM.height,
     hp: RESEARCH_GOLEM.maxHp,
     alive: true,
+    // Dormant until the player reaches activationX (task B, level data):
+    // no thinking, no firing, no attack-pattern advancement until then.
+    active: false,
+    activationX,
     hitFlash: 0,
     // 'phaseA' | 'claim' | 'phaseB' | 'dead'.
     phase: 'phaseA',
@@ -51,6 +55,7 @@ export function createResearchGolem(x, y) {
 // Returns any hostile projectiles fired this step, so game.js can own the
 // shared projectile list rather than bosses.js reaching into it.
 export function updateResearchGolem(boss, dt) {
+  if (!boss.active) return []; // task B: sits idle until the player arrives
   if (boss.hitFlash > 0) boss.hitFlash -= dt;
   if (boss.tauntTimer > 0) boss.tauntTimer -= dt;
   if (!boss.alive) return [];
@@ -103,7 +108,7 @@ function fireAttack(boss, patternId, patterns, contactDamage) {
         height: pattern.projectileHeight,
         vx: -pattern.projectileSpeed,
         vy: 0,
-        life: 4,
+        life: BOSS_PROJECTILE_LIFETIME,
         owner: 'boss',
         contactDamage,
         color: pattern.color,
@@ -123,7 +128,7 @@ function fireAttack(boss, patternId, patterns, contactDamage) {
         vx: -pattern.projectileSpeed,
         vy: pattern.launchVy,
         gravity: pattern.gravity,
-        life: 4,
+        life: BOSS_PROJECTILE_LIFETIME,
         owner: 'boss',
         contactDamage,
         color: pattern.color,
@@ -148,7 +153,7 @@ function fireAttack(boss, patternId, patterns, contactDamage) {
         height: pattern.projectileHeight,
         vx: Math.cos(rad) * pattern.projectileSpeed,
         vy: Math.sin(rad) * pattern.projectileSpeed,
-        life: 4,
+        life: BOSS_PROJECTILE_LIFETIME,
         owner: 'boss',
         contactDamage,
         color: pattern.color,
@@ -161,7 +166,11 @@ function fireAttack(boss, patternId, patterns, contactDamage) {
 }
 
 export function damageResearchGolem(boss, amount) {
-  if (!boss.alive || boss.phase === 'claim') return; // invulnerable during the claim phase
+  // task B: dormant means dormant -- a shot fired from outside the arena,
+  // before the player has crossed activationX, must not be able to chip
+  // a sleeping boss for free. Projectile range/culling should normally
+  // prevent this anyway, but this is the correctness guarantee.
+  if (!boss.active || !boss.alive || boss.phase === 'claim') return;
   boss.hp -= amount;
   boss.hitFlash = RESEARCH_GOLEM.hitFlashDuration;
   if (boss.hp <= 0) {
@@ -180,7 +189,7 @@ export function damageResearchGolem(boss, amount) {
 // that mechanic is Research-Golem-only and is never reused here.
 // ---------------------------------------------------------------------
 
-export function createGraduationBoss(x, y) {
+export function createGraduationBoss(x, y, activationX) {
   return {
     x,
     y,
@@ -188,6 +197,10 @@ export function createGraduationBoss(x, y) {
     height: GRADUATION.height,
     hp: GRADUATION.maxHp,
     alive: true,
+    // Dormant until the player reaches activationX (task B) -- same as
+    // the Research Golem.
+    active: false,
+    activationX,
     hitFlash: 0,
     // 'stage1' | 'stage2' | 'dead'.
     stage: 'stage1',
@@ -198,6 +211,7 @@ export function createGraduationBoss(x, y) {
 }
 
 export function updateGraduationBoss(boss, dt) {
+  if (!boss.active) return []; // task B: sits idle until the player arrives
   if (boss.hitFlash > 0) boss.hitFlash -= dt;
   if (!boss.alive) return [];
 
@@ -226,7 +240,7 @@ export function updateGraduationBoss(boss, dt) {
 }
 
 export function damageGraduationBoss(boss, amount) {
-  if (!boss.alive) return;
+  if (!boss.active || !boss.alive) return; // task B, same reasoning as the Research Golem's
   boss.hp -= amount;
   boss.hitFlash = GRADUATION.hitFlashDuration;
   if (boss.hp <= 0) {

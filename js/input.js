@@ -10,6 +10,12 @@ const BINDINGS = {
 const keysDown = new Set();
 const pressedThisFrame = new Set();
 
+// Left mouse button as an alternative fire input (task A): arrow-key
+// players have F on the wrong side of the keyboard, a click needs no
+// explanation. Tracked as its own flag, not a BINDINGS code, since a
+// mouse button isn't a KeyboardEvent.code.
+let mouseDown = false;
+
 export function initInput(target = window) {
   target.addEventListener('keydown', (event) => {
     if (!keysDown.has(event.code)) pressedThisFrame.add(event.code);
@@ -27,6 +33,23 @@ export function initInput(target = window) {
   document.addEventListener('visibilitychange', () => {
     if (document.hidden) resetInput();
   });
+
+  // mousedown is scoped to the canvas itself, not window: while a DOM
+  // screen (title, comic, application-bound) is showing, it's an opaque
+  // element stacked above the canvas and receives the click instead, so
+  // this handler simply never fires -- no gameState check needed here.
+  // mouseup is on window regardless, so releasing off-canvas still stops
+  // fire instead of leaving it stuck held.
+  const canvas = document.querySelector('#game');
+  if (canvas) {
+    canvas.addEventListener('contextmenu', (event) => event.preventDefault());
+    canvas.addEventListener('mousedown', (event) => {
+      if (event.button === 0) mouseDown = true;
+    });
+  }
+  window.addEventListener('mouseup', (event) => {
+    if (event.button === 0) mouseDown = false;
+  });
 }
 
 // Drops all held and pressed state. Called on focus loss; safe to call at
@@ -34,10 +57,13 @@ export function initInput(target = window) {
 export function resetInput() {
   keysDown.clear();
   pressedThisFrame.clear();
+  mouseDown = false;
 }
 
-// True every frame the action's key is held.
+// True every frame the action's key (or, for 'shoot', the left mouse
+// button) is held.
 export function isActionDown(action) {
+  if (action === 'shoot' && mouseDown) return true;
   return BINDINGS[action].some((code) => keysDown.has(code));
 }
 

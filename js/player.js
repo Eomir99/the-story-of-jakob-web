@@ -51,9 +51,12 @@ export function applyPickup(player, outfit) {
 
 // spawnPoint is the last checkpoint. Milestone 3 (level.js) starts setting
 // this to something other than the initial spawn as checkpoints are added.
-// Returns any projectiles spawned this step, so game.js can own the
-// projectile list rather than player.js reaching into shared state.
-export function updatePlayer(player, dt, spawnPoint) {
+// platforms (task C) are one-way: landable from above while falling, never
+// solid from below or the sides, so a missed jump just drops the player
+// back onto the ground below -- there is no gap to fall out of the level
+// through. Returns any projectiles spawned this step, so game.js can own
+// the projectile list rather than player.js reaching into shared state.
+export function updatePlayer(player, dt, spawnPoint, platforms = []) {
   updateBarks(player, dt);
 
   if (player.dead) {
@@ -86,16 +89,34 @@ export function updatePlayer(player, dt, spawnPoint) {
     player.onGround = false;
   }
 
+  const feetBefore = player.y + player.height;
   player.x += player.vx * dt;
   player.y += player.vy * dt;
+  const feetAfter = player.y + player.height;
+
+  // Platforms first: only while falling (vy >= 0) and only when this step
+  // crossed the platform's top surface from above it -- a one-way landing,
+  // never a ceiling, so jumping up through one from below is unobstructed.
+  let landedOnPlatform = false;
+  if (player.vy >= 0) {
+    for (const platform of platforms) {
+      const withinX = player.x + player.width > platform.x && player.x < platform.x + platform.width;
+      if (withinX && feetBefore <= platform.y && feetAfter >= platform.y) {
+        player.y = platform.y - player.height;
+        player.vy = 0;
+        landedOnPlatform = true;
+        break;
+      }
+    }
+  }
 
   const groundTop = WORLD.groundY - player.height;
-  if (player.y >= groundTop) {
+  if (!landedOnPlatform && player.y >= groundTop) {
     player.y = groundTop;
     player.vy = 0;
     player.onGround = true;
   } else {
-    player.onGround = false;
+    player.onGround = landedOnPlatform;
   }
 
   if (player.fireCooldown > 0) player.fireCooldown -= dt;

@@ -1,6 +1,6 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, SECTIONS, STAIRCASE, HUD } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, SECTIONS, STAIRCASE, HUD } from './config.js';
 import { initInput, clearFrameInput, resetInput } from './input.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
 import { createTrashEnemy, createInboxEnemy, createExchangeEnemy, updateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
@@ -51,6 +51,7 @@ let enemies;
 let boss;
 let graduationBoss;
 let pickups;
+let platforms; // task C: { x, y, width, height }, one-way landable rectangles
 let checkpoints; // sorted ascending by x
 let nextCheckpointIndex;
 let sectionBounds; // sorted ascending by x: [{ x, section }], x = -Infinity is section 'lund'
@@ -58,6 +59,12 @@ let staircaseZone; // { xStart, xEnd } or null
 let comicTriggers; // sorted ascending by x: [{ x, comicId, next }]
 let nextComicTriggerIndex;
 let celebrationTimer = 0; // s remaining on the studentmossa pull-back hold
+// Task B: the currently-closed arena wall, and the boss that owns it.
+// null whenever no fight is active. Set the instant a boss activates;
+// cleared the instant that boss dies.
+let arenaWallX = null;
+let arenaLockCameraX = null;
+let lockedBoss = null;
 let spawnPoint;
 let wasPlayerDead = false;
 let accumulator = 0;
@@ -137,6 +144,7 @@ function loadLevel() {
   boss = null;
   graduationBoss = null;
   pickups = [];
+  platforms = [];
   staircaseZone = null;
   const checkpointXs = [];
   const transitions = [];
@@ -153,9 +161,11 @@ function loadLevel() {
     } else if (entry.type === 'enemy-exchange') {
       enemies.push(createExchangeEnemy(entry.x, y));
     } else if (entry.type === 'boss-research-golem') {
-      boss = createResearchGolem(entry.x, y);
+      boss = createResearchGolem(entry.x, y, entry.activationX);
     } else if (entry.type === 'boss-graduation') {
-      graduationBoss = createGraduationBoss(entry.x, y);
+      graduationBoss = createGraduationBoss(entry.x, y, entry.activationX);
+    } else if (entry.type === 'platform') {
+      platforms.push({ x: entry.x, y, width: PLATFORM.width, height: PLATFORM.height });
     } else if (entry.type === 'pickup') {
       pickups.push({ x: entry.x, y, width: PICKUP.width, height: PICKUP.height, outfit: entry.outfit, collected: false });
       checkpointXs.push(entry.x); // AGENTS.md §6: invisible checkpoints at each pickup
@@ -247,9 +257,11 @@ function loop(now) {
 }
 
 function step(dt) {
-  const spawned = updatePlayer(player, dt, spawnPoint);
+  const spawned = updatePlayer(player, dt, spawnPoint, platforms);
   if (spawned.length > 0) projectiles.push(...spawned);
+  checkBossActivation();
   applySolidWalls();
+  applyArenaWall();
   updateProjectiles(dt);
   for (const enemy of enemies) updateEnemy(enemy, dt);
   const bossSpawned = updateResearchGolem(boss, dt);
@@ -317,6 +329,38 @@ function clampBehindSolidBoss(bossEntity, spec) {
   if (player.x > maxX) player.x = maxX;
 }
 
+// Task B: a sleeping boss can otherwise just be run past -- the level's
+// only obstacle up to that point is contact damage, not a barrier. Waking
+// a boss closes an invisible wall exactly where the player crossed and
+// locks the camera to frame the whole arena, so the fight can't be
+// skipped and nothing scrolls out of view mid-dodge. Both clear the
+// instant that boss dies.
+function checkBossActivation() {
+  activateBossIfReached(boss);
+  activateBossIfReached(graduationBoss);
+
+  if (lockedBoss && !lockedBoss.alive) {
+    arenaWallX = null;
+    arenaLockCameraX = null;
+    lockedBoss = null;
+  }
+}
+
+function activateBossIfReached(bossEntity) {
+  if (!bossEntity || bossEntity.active || !bossEntity.alive) return;
+  if (player.x < bossEntity.activationX) return;
+
+  bossEntity.active = true;
+  arenaWallX = bossEntity.activationX;
+  lockedBoss = bossEntity;
+  const arenaCenterX = (arenaWallX + bossEntity.x + bossEntity.width) / 2;
+  arenaLockCameraX = arenaCenterX - CANVAS.width / 2;
+}
+
+function applyArenaWall() {
+  if (arenaWallX !== null && player.x < arenaWallX) player.x = arenaWallX;
+}
+
 function updateProjectiles(dt) {
   for (const projectile of projectiles) {
     projectile.x += projectile.vx * dt;
@@ -324,7 +368,15 @@ function updateProjectiles(dt) {
     projectile.y += (projectile.vy || 0) * dt;
     projectile.life -= dt;
   }
-  projectiles = projectiles.filter((projectile) => projectile.life > 0);
+  // Task B: culled the instant a projectile leaves the camera's active
+  // area, regardless of remaining lifetime -- a correctness fix on its
+  // own, since nothing should be able to travel a whole section of the
+  // level, independent of whether the boss that fired it was dormant.
+  const cullLeft = camera.x - PROJECTILE_CULL_MARGIN;
+  const cullRight = camera.x + CANVAS.width + PROJECTILE_CULL_MARGIN;
+  projectiles = projectiles.filter(
+    (projectile) => projectile.life > 0 && projectile.x + projectile.width > cullLeft && projectile.x < cullRight
+  );
 }
 
 function resolveProjectileHits() {
@@ -402,9 +454,16 @@ function updateCamera(dt) {
   const viewCenterY = camera.y + CANVAS.height / 2;
 
   let desiredX = camera.x;
-  const dx = targetCenterX - viewCenterX;
-  if (dx > halfDeadzoneW) desiredX = camera.x + (dx - halfDeadzoneW);
-  else if (dx < -halfDeadzoneW) desiredX = camera.x + (dx + halfDeadzoneW);
+  if (arenaLockCameraX !== null) {
+    // Task B: while a boss arena is active, the camera holds a fixed
+    // framing of the whole arena instead of following the player, so
+    // nothing scrolls out of view while dodging.
+    desiredX = arenaLockCameraX;
+  } else {
+    const dx = targetCenterX - viewCenterX;
+    if (dx > halfDeadzoneW) desiredX = camera.x + (dx - halfDeadzoneW);
+    else if (dx < -halfDeadzoneW) desiredX = camera.x + (dx + halfDeadzoneW);
+  }
 
   let desiredY = camera.y;
   const dy = targetCenterY - viewCenterY;
@@ -426,9 +485,10 @@ function updateCamera(dt) {
 }
 
 // Level isn't bounded yet (no end-of-level data), so background fills just
-// need to comfortably cover any reasonable play area.
+// need to comfortably cover any reasonable play area. Task D's derived
+// layout runs to just under 47,000; 60,000 leaves comfortable margin.
 const WORLD_RENDER_LEFT = -5000;
-const WORLD_RENDER_RIGHT = 20000;
+const WORLD_RENDER_RIGHT = 60000;
 const GROUND_COLOR = '#1b2333';
 
 function render() {
@@ -453,6 +513,7 @@ function render() {
   ctx.fillStyle = GROUND_COLOR;
   ctx.fillRect(WORLD_RENDER_LEFT, WORLD.groundY, WORLD_RENDER_RIGHT - WORLD_RENDER_LEFT, CANVAS.height - WORLD.groundY);
 
+  drawPlatforms(ctx);
   drawPickups(ctx);
   drawPlayer(ctx, player);
   for (const enemy of enemies) drawEnemy(ctx, enemy);
@@ -492,6 +553,13 @@ function drawSections(ctx) {
     const right = i + 1 < sectionBounds.length ? sectionBounds[i + 1].x : WORLD_RENDER_RIGHT;
     ctx.fillStyle = SECTIONS[bound.section].backgroundColor;
     ctx.fillRect(left, 0, right - left, CANVAS.height);
+  }
+}
+
+function drawPlatforms(ctx) {
+  ctx.fillStyle = PLATFORM.color;
+  for (const platform of platforms) {
+    ctx.fillRect(Math.round(platform.x), Math.round(platform.y), platform.width, platform.height);
   }
 }
 

@@ -69,6 +69,21 @@ export const PROJECTILE = {
   fireCooldown: 0.28, // s between shots while held
 };
 
+// Boss projectile lifetime (task B) -- was hardcoded to 4s directly in
+// bosses.js, which at up to 420px/s let a shot travel over 1600px: most of
+// a level section. This is a shared backstop lifetime for every boss
+// pattern; PROJECTILE_CULL_MARGIN below is the primary defense (it removes
+// a projectile as soon as it leaves the visible area, regardless of
+// remaining life), but nothing should rely on the camera check alone --
+// every projectile still needs its own hard cap.
+export const BOSS_PROJECTILE_LIFETIME = 3; // s
+
+// Projectile culling (task B): a correctness fix independent of boss
+// dormancy below -- nothing should ever survive long enough to travel a
+// whole section of the level. Checked every step against the camera's
+// current position, on top of each projectile's own lifetime above.
+export const PROJECTILE_CULL_MARGIN = 200; // px outside the camera's view before removal
+
 export const CAMERA = {
   deadzoneWidth: 220, // px, total width of the horizontal dead zone
   deadzoneHeight: 140, // px, total height of the vertical dead zone
@@ -109,6 +124,17 @@ export const PICKUP = {
   labelFont: '14px sans-serif',
   labelColor: '#f7f3e3',
   labelGapAboveBox: 6, // px between the label's baseline and the box top
+};
+
+// Platforms (task C, AGENTS.md §5: "fixed standard dimensions for...
+// platforms"). One-way: landable from above, never solid from the sides
+// or below (player.js). Every instance is this same size -- only x/y vary
+// in level.js -- so "wide, forgiving" (PLAN.md task C) is true everywhere
+// by construction, not something each placement has to get right.
+export const PLATFORM = {
+  width: 220,
+  height: 24,
+  color: '#3a4a63',
 };
 
 // Enemy roster (AGENTS.md §3). Three behaviours total: Lund trash is
