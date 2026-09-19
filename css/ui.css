@@ -277,3 +277,48 @@
   color: #f7f3e3;
   background: rgba(13, 17, 23, 0.75);
 }
+
+/* ---------------------------------------------------------------------
+   The utspring title card (PLAN.md task 3.5)
+
+   Shown for about two seconds at the end of the staircase run, then
+   faded out. Its opacity is set by game.js from simulation time, not by
+   a CSS transition, so there is deliberately no `transition` here --
+   see index.html for why.
+
+   Sits low and centered so it never covers the player at the bottom of
+   the staircase, and never takes pointer events: the persistent Skip to
+   application and Mute controls stay clickable throughout the sequence.
+   --------------------------------------------------------------------- */
+.studentmossa-card {
+  position: absolute;
+  left: 50%;
+  bottom: 12%;
+  transform: translateX(-50%);
+  z-index: 3;
+  pointer-events: none;
+  max-width: 72%;
+  padding: 1.1rem 2.2rem;
+  text-align: center;
+  background: rgba(13, 17, 23, 0.82);
+  border: 1px solid rgba(247, 243, 227, 0.22);
+  border-radius: 6px;
+}
+
+.studentmossa-card[hidden] {
+  display: none;
+}
+
+.studentmossa-card-title {
+  margin: 0;
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: #f7f3e3;
+}
+
+.studentmossa-card-body {
+  margin: 0.4rem 0 0;
+  font-size: 1.05rem;
+  color: rgba(247, 243, 227, 0.78);
+}

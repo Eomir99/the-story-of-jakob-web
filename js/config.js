@@ -91,33 +91,84 @@ export const CAMERA = {
   zoomSmoothing: 3, // higher = zoom transitions catch up faster
 };
 
-// The staircase run and studentmössa moment (AGENTS.md §3): earned by
-// running the staircase, not by defeating anything. Grey-box has no
-// staircase art yet (Milestone 7) -- the camera pull-back and celebration
-// hold are what make the beat read as a milestone in the meantime.
+// The utspring — the staircase run and the studentmössa (AGENTS.md §3,
+// PLAN.md task 3.5). A scripted five-second sequence, not a pickup you
+// walk into: approach, handover, descent, confetti, flash, title card,
+// control back. Everything below is one of its tunables.
+//
+// The whole beat must stay under six seconds:
+//   descentDuration + flashDuration + cardHoldDuration + cardFadeDuration
+//   = 3.0 + 0.25 + 1.6 + 0.4 = 5.25 s  ✓
+// If any of these are raised, check that sum again.
 export const STAIRCASE = {
-  zoomOut: 0.8, // camera scale while running the staircase / celebrating
-  celebrationHoldDuration: 1.6, // s, extra pulled-back hold after the pickup
+  // --- Geometry. level.js derives the actual platform run from these:
+  // the number of steps, the height of the top landing and the approach
+  // platforms that climb to it all fall out of the numbers here, so the
+  // staircase always matches how far the auto-run actually travels.
+  stepDrop: 44, // px each step sits below the one before it
+
+  // --- Timings
+  descentDuration: 3.0, // s of auto-run from the handover to the stop
+  speedRampMultiplier: 1.5, // final auto-run speed, as a multiple of PLAYER.moveSpeed
+  flashDuration: 0.25, // s of white flash; the studentmössa appears under it
+  cardHoldDuration: 1.6, // s the title card holds at full opacity
+  cardFadeDuration: 0.4, // s it fades out over; control returns when it's gone
+
+  zoomOut: 0.8, // camera scale for the whole sequence — the view widens
+  flashColor: '#ffffff',
 };
 
-// Pickups (AGENTS.md §3/§6): studentmössa, suit, armour. Grey-box: plain
-// rectangles, one color per outfit, labelled with text (AGENTS.md §5: this
-// is exactly the kind of temporary gameplay label canvas text is for) --
-// three same-sized boxes are otherwise indistinguishable from each other
-// and, before this fix, studentmössa was even the same color as the
-// player. "studentmössa" itself is never translated (AGENTS.md §3), so
-// the label keeps the Swedish term; suit/armour are already English in
-// the design.
+// Confetti for the utspring (PLAN.md task 3.5). Deliberately not a
+// particle system (AGENTS.md §7.10): a fixed number of small coloured
+// rectangles, spawned once when the descent starts, falling with some
+// drift and spin, culled when they leave the view.
+export const CONFETTI = {
+  count: 180,
+  width: 10,
+  height: 14,
+  colors: ['#f6c453', '#c9574b', '#6fd67a', '#f7f3e3', '#5aa9e6', '#d98cc4'],
+  fallSpeedMin: 180, // px/s
+  fallSpeedMax: 420, // px/s
+  driftSpeed: 70, // px/s, max horizontal drift in either direction
+  spinSpeedMax: 5, // radians/s, in either direction
+  spawnBandHeight: 1200, // px above the view that pieces start scattered through
+  cullMargin: 60, // px below the view before a piece is removed
+};
+
+// The studentmössa on the player sprite. AGENTS.md §6: an overlay drawn
+// on the base character, never a second animation set. Grey-box
+// placeholder — a white cap with a brim and a tassel. When the real
+// overlay art lands (task 6.4), drawStudentmossa in player.js becomes a
+// single drawImage call and these numbers become its offset.
+export const STUDENTMOSSA_OVERLAY = {
+  capWidth: 44, // px, wider than the head — obviously a placeholder
+  capHeight: 8,
+  brimWidth: 22,
+  brimHeight: 9,
+  offsetY: -10, // px above the player's top edge
+  color: '#ffffff',
+  brimColor: '#151a23',
+  tasselColor: '#c9574b', // deliberately not PLAYER.color, or it vanishes into the sprite
+  tasselLength: 16,
+  tasselWidth: 3,
+};
+
+// Pickups (AGENTS.md §3/§6): suit and armour. Grey-box: plain rectangles,
+// one color per outfit, labelled with text (AGENTS.md §5: this is exactly
+// the kind of temporary gameplay label canvas text is for) -- same-sized
+// boxes are otherwise indistinguishable from each other.
+//
+// The studentmössa is deliberately absent: it is no longer a box you walk
+// into but the reward at the end of the utspring sequence (STAIRCASE
+// above, PLAN.md task 3.5), so it has no pickup entity, colour or label.
 export const PICKUP = {
   width: 32,
   height: 32,
   colors: {
-    studentmossa: '#ffffff', // the studentmössa is a white cap
     suit: '#3d4a63',
     armour: '#8a8f98',
   },
   labels: {
-    studentmossa: 'STUDENTMÖSSA',
     suit: 'SUIT',
     armour: 'ARMOUR',
   },

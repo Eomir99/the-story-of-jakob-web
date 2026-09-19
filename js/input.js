@@ -16,6 +16,20 @@ const pressedThisFrame = new Set();
 // mouse button isn't a KeyboardEvent.code.
 let mouseDown = false;
 
+// Input suppression (PLAN.md task 3.5): the utspring sequence ignores the
+// player entirely for its four to six seconds, including fire. This is a
+// flag on the existing system, not a second input path -- the handlers
+// below keep recording exactly as they always do, and only the two
+// readers stop answering. Setting it either way drops all held and
+// pressed state (see resetInput), so nothing the player mashed during the
+// sequence can fire the moment control comes back.
+let suppressed = false;
+
+export function setInputSuppressed(value) {
+  suppressed = value;
+  resetInput();
+}
+
 export function initInput(target = window) {
   target.addEventListener('keydown', (event) => {
     if (!keysDown.has(event.code)) pressedThisFrame.add(event.code);
@@ -63,12 +77,14 @@ export function resetInput() {
 // True every frame the action's key (or, for 'shoot', the left mouse
 // button) is held.
 export function isActionDown(action) {
+  if (suppressed) return false;
   if (action === 'shoot' && mouseDown) return true;
   return BINDINGS[action].some((code) => keysDown.has(code));
 }
 
 // True only on the frame the action's key was first pressed.
 export function wasActionPressed(action) {
+  if (suppressed) return false;
   return BINDINGS[action].some((code) => pressedThisFrame.has(code));
 }
 

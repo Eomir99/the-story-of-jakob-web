@@ -1,7 +1,7 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, SECTIONS, STAIRCASE, HUD } from './config.js';
-import { initInput, clearFrameInput, resetInput } from './input.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, SECTIONS, STAIRCASE, CONFETTI, HUD } from './config.js';
+import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
 import { createTrashEnemy, createInboxEnemy, createExchangeEnemy, updateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
 import {
@@ -43,6 +43,21 @@ function setGameState(next) {
   if (stateChangeListener) stateChangeListener(gameState, { comicId: activeComicId });
 }
 
+// The utspring title card is narrative copy, so it is DOM, not canvas
+// (AGENTS.md §5). Same one-listener shape as subscribeToStateChange
+// above: game.js owns the timing, ui.js owns the element. The opacity is
+// driven from simulation time rather than a CSS transition, so the card
+// freezes and resumes exactly with the rest of the game when the tab is
+// hidden (task 3.10).
+let titleCardListener = null;
+export function subscribeToTitleCard(listener) {
+  titleCardListener = listener;
+}
+
+function setTitleCard(visible, opacity) {
+  if (titleCardListener) titleCardListener(visible, opacity);
+}
+
 let ctx;
 let player;
 let camera;
@@ -55,10 +70,9 @@ let platforms; // task C: { x, y, width, height }, one-way landable rectangles
 let checkpoints; // sorted ascending by x
 let nextCheckpointIndex;
 let sectionBounds; // sorted ascending by x: [{ x, section }], x = -Infinity is section 'lund'
-let staircaseZone; // { xStart, xEnd } or null
+let utspringTriggerX; // x that hands control to the utspring sequence, or null
 let comicTriggers; // sorted ascending by x: [{ x, comicId, next }]
 let nextComicTriggerIndex;
-let celebrationTimer = 0; // s remaining on the studentmossa pull-back hold
 // Task B: the currently-closed arena wall, and the boss that owns it.
 // null whenever no fight is active. Set the instant a boss activates;
 // cleared the instant that boss dies.
@@ -84,7 +98,6 @@ export function startGame(canvas) {
   player = createPlayer(spawnPoint.x, spawnPoint.y);
   camera = { x: 0, y: 0, zoom: 1 };
   projectiles = [];
-  celebrationTimer = 0;
   setGameState(STATE.TITLE);
 
   accumulator = 0;
@@ -123,6 +136,155 @@ function enterComic(comicId, next) {
   setGameState(STATE.COMIC);
 }
 
+// --- The utspring (PLAN.md task 3.5) ---------------------------------------
+//
+// The first milestone in the game, and the only moment where the player
+// is not fighting. Everything up to here is run, jump and shoot; for five
+// seconds the game hands the moment over instead of asking the player to
+// earn it with reflexes. It is also a real Swedish ritual -- utspring,
+// running out of school on graduation day -- so it reads as a
+// celebration, not as a reward screen.
+//
+// This is one scripted sequence, hardcoded for this one moment. It is
+// deliberately NOT a cutscene framework (AGENTS.md §7.10). If a second
+// scripted beat is ever needed, that is when to generalise, not now.
+//
+// The beat, in order:
+//   DESCENT  input handed over, auto-run down the staircase with the
+//            speed ramping up, camera widened, confetti falling
+//   FLASH    the player stops; a brief white flash; the studentmössa
+//            appears on the sprite underneath it
+//   CARD     the DOM title card holds, then fades
+//   DONE     control returns, and this can never run again
+//
+// Total length is the sum of the four timings in config.js: 5.25s, and
+// it must stay under six.
+const UTSPRING = { IDLE: 'idle', DESCENT: 'descent', FLASH: 'flash', CARD: 'card', DONE: 'done' };
+let utspringPhase = UTSPRING.IDLE;
+let utspringTimer = 0;
+let confetti = [];
+
+function isUtspringRunning() {
+  return utspringPhase !== UTSPRING.IDLE && utspringPhase !== UTSPRING.DONE;
+}
+
+// Called first in every step, so the auto-run speed is already set by the
+// time updatePlayer reads it.
+function updateUtspring(dt) {
+  if (utspringPhase === UTSPRING.DONE) return;
+
+  if (utspringPhase === UTSPRING.IDLE) {
+    // Fires exactly once per playthrough: the phase leaves IDLE here and
+    // only ever ends at DONE, which returns above.
+    if (utspringTriggerX === null || player.x < utspringTriggerX) return;
+    beginUtspring();
+    return;
+  }
+
+  utspringTimer += dt;
+  updateConfetti(dt);
+
+  if (utspringPhase === UTSPRING.DESCENT) {
+    // Speed increases gradually over the descent, ending above normal run
+    // speed. Linear, and the staircase in level.js is sized from exactly
+    // this ramp, so the player arrives at the bottom as the timer expires.
+    const t = Math.min(1, utspringTimer / STAIRCASE.descentDuration);
+    player.autoRun = PLAYER.moveSpeed * (1 + (STAIRCASE.speedRampMultiplier - 1) * t);
+    if (utspringTimer >= STAIRCASE.descentDuration) {
+      player.autoRun = 0; // arrival: comes to a stop
+      // The studentmössa goes on under the flash, so the swap is never
+      // seen happening -- the flash is what covers it.
+      applyPickup(player, 'studentmossa');
+      enterUtspringPhase(UTSPRING.FLASH);
+    }
+    return;
+  }
+
+  if (utspringPhase === UTSPRING.FLASH) {
+    if (utspringTimer >= STAIRCASE.flashDuration) enterUtspringPhase(UTSPRING.CARD);
+    return;
+  }
+
+  // CARD: holds at full opacity, then fades. Control returns the moment
+  // the fade finishes.
+  const fadeElapsed = utspringTimer - STAIRCASE.cardHoldDuration;
+  const opacity = fadeElapsed <= 0 ? 1 : Math.max(0, 1 - fadeElapsed / STAIRCASE.cardFadeDuration);
+  setTitleCard(true, opacity);
+  if (fadeElapsed >= STAIRCASE.cardFadeDuration) endUtspring();
+}
+
+function beginUtspring() {
+  enterUtspringPhase(UTSPRING.DESCENT);
+  // Input is ignored for the whole sequence, fire included, and
+  // setInputSuppressed drops every held and pressed key on the way in and
+  // on the way out -- so nothing the player mashed during these five
+  // seconds fires when control comes back.
+  setInputSuppressed(true);
+  player.invincible = true;
+  player.autoRun = PLAYER.moveSpeed;
+  spawnConfetti();
+}
+
+function enterUtspringPhase(next) {
+  utspringPhase = next;
+  utspringTimer = 0;
+}
+
+function endUtspring() {
+  utspringPhase = UTSPRING.DONE;
+  setTitleCard(false, 0);
+  confetti = [];
+  player.autoRun = null;
+  player.invincible = false;
+  setInputSuppressed(false);
+}
+
+// The size of the visible world rectangle while the camera is widened.
+// Confetti is spawned across it and culled against it.
+function widenedViewSize() {
+  return { width: CANVAS.width / STAIRCASE.zoomOut, height: CANVAS.height / STAIRCASE.zoomOut };
+}
+
+// Not a particle system (AGENTS.md §7.10): a fixed number of small
+// coloured rectangles, spawned once, scattered through a tall band above
+// the view and across the whole horizontal run the descent will cover, so
+// they keep drifting into frame for the rest of the sequence.
+function spawnConfetti() {
+  const view = widenedViewSize();
+  const runLength = PLAYER.moveSpeed * ((1 + STAIRCASE.speedRampMultiplier) / 2) * STAIRCASE.descentDuration;
+  // Anchored on the player, not on the camera: the camera eases toward its
+  // target rather than snapping, so at the instant the sequence starts it
+  // may still be some way behind. The player is where the confetti has to
+  // be. The band runs a whole descent's worth further right, so pieces
+  // keep drifting in ahead as the run carries on.
+  const left = player.x + player.width / 2 - view.width / 2;
+  const top = player.y + player.height / 2 - view.height / 2;
+  confetti = [];
+  for (let i = 0; i < CONFETTI.count; i++) {
+    confetti.push({
+      x: left + Math.random() * (view.width + runLength),
+      y: top - Math.random() * CONFETTI.spawnBandHeight,
+      vx: (Math.random() * 2 - 1) * CONFETTI.driftSpeed,
+      vy: CONFETTI.fallSpeedMin + Math.random() * (CONFETTI.fallSpeedMax - CONFETTI.fallSpeedMin),
+      angle: Math.random() * Math.PI * 2,
+      spin: (Math.random() * 2 - 1) * CONFETTI.spinSpeedMax,
+      color: CONFETTI.colors[i % CONFETTI.colors.length],
+    });
+  }
+}
+
+function updateConfetti(dt) {
+  if (confetti.length === 0) return;
+  const view = widenedViewSize();
+  const cullBelow = camera.y + (CANVAS.height + view.height) / 2 + CONFETTI.cullMargin;
+  for (const piece of confetti) {
+    piece.x += piece.vx * dt;
+    piece.y += piece.vy * dt;
+    piece.angle += piece.spin * dt;
+  }
+  confetti = confetti.filter((piece) => piece.y < cullBelow);
+}
+
 // Level-data-driven comic beats (story beats 5, 7 and 9 in AGENTS.md §3):
 // once the player's x crosses a comic-trigger entry, pause gameplay into
 // the comic placeholder. `next` is 'playing' to resume the fight ahead, or
@@ -145,7 +307,7 @@ function loadLevel() {
   graduationBoss = null;
   pickups = [];
   platforms = [];
-  staircaseZone = null;
+  utspringTriggerX = null;
   const checkpointXs = [];
   const transitions = [];
   const triggers = [];
@@ -173,8 +335,8 @@ function loadLevel() {
       checkpointXs.push(entry.x);
     } else if (entry.type === 'section-transition') {
       transitions.push({ x: entry.x, section: entry.section });
-    } else if (entry.type === 'staircase-run') {
-      staircaseZone = { xStart: entry.xStart, xEnd: entry.xEnd };
+    } else if (entry.type === 'utspring-trigger') {
+      utspringTriggerX = entry.x;
     } else if (entry.type === 'comic-trigger') {
       triggers.push({ x: entry.x, comicId: entry.comicId, next: entry.next });
     }
@@ -257,6 +419,9 @@ function loop(now) {
 }
 
 function step(dt) {
+  // Before the player updates: the sequence owns their movement while it
+  // is running, so it has to set autoRun for this step first.
+  updateUtspring(dt);
   const spawned = updatePlayer(player, dt, spawnPoint, platforms);
   if (spawned.length > 0) projectiles.push(...spawned);
   checkBossActivation();
@@ -274,7 +439,6 @@ function step(dt) {
   advanceCheckpoint();
   handleDeathTransition();
   checkComicTriggers();
-  if (celebrationTimer > 0) celebrationTimer -= dt;
   updateCamera(dt);
 }
 
@@ -284,10 +448,6 @@ function resolvePickups() {
     if (aabbOverlap(player, pickup)) {
       pickup.collected = true;
       applyPickup(player, pickup.outfit);
-      // The studentmössa moment (AGENTS.md §3): earned by the staircase
-      // run, not by defeating anything -- hold the pulled-back camera a
-      // beat longer here. Suit/armour don't get this treatment.
-      if (pickup.outfit === 'studentmossa') celebrationTimer = STAIRCASE.celebrationHoldDuration;
     }
   }
 }
@@ -474,12 +634,11 @@ function updateCamera(dt) {
   camera.x += (desiredX - camera.x) * ease;
   camera.y += (desiredY - camera.y) * ease;
 
-  // Camera pull-back for the staircase run and the studentmössa moment
-  // (task 3.5): zoomed out while inside the zone or during the
-  // post-pickup celebration hold, back to normal otherwise.
-  const inStaircaseZone =
-    staircaseZone && player.x >= staircaseZone.xStart && player.x <= staircaseZone.xEnd;
-  const targetZoom = inStaircaseZone || celebrationTimer > 0 ? STAIRCASE.zoomOut : 1;
+  // The view widens for the whole utspring (task 3.5). No zoom system was
+  // built for it: the camera transform in render() already applies
+  // camera.zoom, so this is one target value, eased by the same smoothing
+  // every other camera motion uses.
+  const targetZoom = isUtspringRunning() ? STAIRCASE.zoomOut : 1;
   const zoomEase = 1 - Math.exp(-CAMERA.zoomSmoothing * dt);
   camera.zoom += (targetZoom - camera.zoom) * zoomEase;
 }
@@ -523,11 +682,36 @@ function render() {
   drawGraduationBoss(ctx, graduationBoss);
   drawGraduationBossHpBar(ctx, graduationBoss);
   drawProjectiles(ctx);
+  drawConfetti(ctx);
   ctx.restore();
 
   // Screen space, after the camera transform is unwound: the HUD must not
   // pan or scale with the world (notably during the staircase pull-back).
   drawPlayerHud(ctx);
+  // Over everything, HUD included: the arrival flash is the whole screen.
+  drawUtspringFlash(ctx);
+}
+
+function drawConfetti(ctx) {
+  for (const piece of confetti) {
+    ctx.save();
+    ctx.translate(piece.x, piece.y);
+    ctx.rotate(piece.angle);
+    ctx.fillStyle = piece.color;
+    ctx.fillRect(-CONFETTI.width / 2, -CONFETTI.height / 2, CONFETTI.width, CONFETTI.height);
+    ctx.restore();
+  }
+}
+
+// The arrival flash (task 3.5): full white at the start of the phase,
+// gone by the end of it, revealing the studentmössa that was put on
+// underneath.
+function drawUtspringFlash(ctx) {
+  if (utspringPhase !== UTSPRING.FLASH) return;
+  ctx.globalAlpha = Math.max(0, 1 - utspringTimer / STAIRCASE.flashDuration);
+  ctx.fillStyle = STAIRCASE.flashColor;
+  ctx.fillRect(0, 0, CANVAS.width, CANVAS.height);
+  ctx.globalAlpha = 1;
 }
 
 // One square per hit point, filled while held. The player has had three HP

@@ -68,6 +68,23 @@
       </div>
 
       <!--
+        The utspring title card (PLAN.md task 3.5). Narrative copy, so it
+        is DOM and not canvas (AGENTS.md §5) -- reusing this same UI layer
+        rather than drawing text into the game. "studentmössa" is never
+        translated (AGENTS.md §3); the gloss beside it is.
+
+        game.js drives both `hidden` and `opacity` from simulation time,
+        so the hold and the fade freeze and resume with the rest of the
+        game when the tab is hidden -- a CSS transition would keep running
+        while the simulation was paused. pointer-events stay off in the
+        stylesheet so it can never sit in front of the persistent controls.
+      -->
+      <div id="studentmossa-card" class="studentmossa-card" hidden>
+        <p class="studentmossa-card-title">Studentmössa</p>
+        <p class="studentmossa-card-body">Swedish graduation cap. Earned, not given.</p>
+      </div>
+
+      <!--
         Persistent controls (PLAN.md task 4.4, AGENTS.md §5): Skip to
         application and Mute/Unmute, present during gameplay and comics.
         Last in #viewport so it paints above both the canvas and the

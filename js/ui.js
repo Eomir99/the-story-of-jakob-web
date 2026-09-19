@@ -4,7 +4,7 @@
 // showing/hiding the real ones and wiring their controls back into
 // game.js. game.js never touches the DOM itself.
 
-import { startFromTitle, subscribeToStateChange, STATE } from './game.js';
+import { startFromTitle, subscribeToStateChange, subscribeToTitleCard, STATE } from './game.js';
 import { loadAssets } from './assets.js';
 import { initComicViewer, showComic, hideComic } from './comics.js';
 
@@ -12,6 +12,7 @@ export function initUI() {
   initTitleScreen();
   initComicViewer();
   initPersistentControls();
+  initStudentmossaCard();
 
   const persistentControls = document.querySelector('#persistent-controls');
 
@@ -34,6 +35,19 @@ export function initUI() {
     if (persistentControls) persistentControls.hidden = state === STATE.TITLE;
 
     if (state === STATE.APPLICATION) window.location.href = './application.html';
+  });
+}
+
+// The utspring title card (task 3.5). game.js owns every timing; this
+// only shows the element and applies the opacity it is handed, which is
+// computed from simulation time and so pauses with the game.
+function initStudentmossaCard() {
+  const card = document.querySelector('#studentmossa-card');
+  if (!card) return;
+
+  subscribeToTitleCard((visible, opacity) => {
+    card.hidden = !visible;
+    card.style.opacity = String(opacity);
   });
 }
 

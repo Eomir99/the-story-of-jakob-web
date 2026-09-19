@@ -1,7 +1,7 @@
 // player.js — movement, gravity, jump, ground collision, shooting,
 // damage/death/respawn.
 
-import { PLAYER, PROJECTILE, WORLD, PICKUP, BARK } from './config.js';
+import { PLAYER, PROJECTILE, WORLD, PICKUP, BARK, STUDENTMOSSA_OVERLAY } from './config.js';
 import { isActionDown, wasActionPressed } from './input.js';
 
 export function createPlayer(x, y) {
@@ -24,6 +24,13 @@ export function createPlayer(x, y) {
     // studentmössa (AGENTS.md §3/§6). Never reset on respawn: pickups are
     // permanent progress.
     outfit: 'none',
+    // The utspring sequence (PLAN.md task 3.5) sets these for its four to
+    // six seconds and clears them again. autoRun is a horizontal speed in
+    // px/s that overrides whatever input says; invincible means damage is
+    // ignored outright, so the player cannot be hurt and cannot die while
+    // the game is playing itself.
+    autoRun: null,
+    invincible: false,
     barks: [], // active kill barks (task 3.9): { text, timer }
     barkCounts: {}, // per-enemy-type kill count, so lines cycle instead of repeating
   };
@@ -79,6 +86,14 @@ export function updatePlayer(player, dt, spawnPoint, platforms = []) {
   if (!shooting) {
     if (left && !right) player.facing = -1;
     else if (right && !left) player.facing = 1;
+  }
+
+  // Scripted auto-run (the utspring, task 3.5) overrides input-derived
+  // movement. Input is already suppressed upstream in input.js, so this
+  // is simply what moves the player while the sequence owns them.
+  if (player.autoRun !== null) {
+    player.vx = player.autoRun;
+    player.facing = 1;
   }
 
   player.vy += WORLD.gravity * dt;
@@ -149,7 +164,7 @@ function spawnProjectile(player) {
 // already invulnerable or mid-respawn, so contact with an enemy can't stack
 // multiple hits in one graze.
 export function damagePlayer(player, amount) {
-  if (player.dead || player.invulnerableFor > 0) return;
+  if (player.dead || player.invincible || player.invulnerableFor > 0) return;
   player.hp -= amount;
   player.invulnerableFor = PLAYER.invulnerabilityDuration;
   if (player.hp <= 0) {
@@ -176,21 +191,42 @@ function respawnPlayer(player, spawnPoint) {
 export function drawPlayer(ctx, player) {
   if (player.dead) return;
   // Blink while invulnerable so the grace period reads clearly. Fading
-  // rather than flashing white: the studentmossa outfit below is itself
-  // white, so a white flash was invisible for the whole stretch of the
-  // level where the player is wearing it.
+  // rather than flashing white, which would be hard to read against the
+  // white studentmössa overlay.
   const blinking = player.invulnerableFor > 0 && Math.floor(player.invulnerableFor * 12) % 2 === 0;
   // Grey-box stand-in for the outfit change: tint the rectangle by the
-  // current pickup's color. Real sprite swap/overlay arrives with art
-  // (Milestone 6, AGENTS.md §6) -- this just makes the state change
-  // observable before then.
+  // current pickup's color. Real sprite swap arrives with art (Milestone
+  // 6, AGENTS.md §6) -- this just makes the state change observable
+  // before then. The studentmössa is deliberately not a tint: AGENTS.md
+  // §6 makes it an overlay on the base character, drawn below.
   const baseColor = PICKUP.colors[player.outfit] || PLAYER.color;
   ctx.globalAlpha = blinking ? 0.35 : 1;
   ctx.fillStyle = baseColor;
   ctx.fillRect(Math.round(player.x), Math.round(player.y), player.width, player.height);
+  if (player.outfit === 'studentmossa') drawStudentmossa(ctx, player);
   ctx.globalAlpha = 1;
 
   drawBarks(ctx, player);
+}
+
+// The studentmössa overlay (AGENTS.md §6: drawn on the base character,
+// never a second animation set). Obvious placeholder art: a white cap, a
+// dark brim and a yellow tassel, all oversized so nobody mistakes it for
+// finished. When the real overlay lands (task 6.4) the body of this
+// function becomes one drawImage call at the same offset:
+//
+//   ctx.drawImage(image, x, player.y + STUDENTMOSSA_OVERLAY.offsetY);
+function drawStudentmossa(ctx, player) {
+  const o = STUDENTMOSSA_OVERLAY;
+  const centerX = Math.round(player.x + player.width / 2);
+  const top = Math.round(player.y + o.offsetY);
+
+  ctx.fillStyle = o.brimColor;
+  ctx.fillRect(centerX - o.brimWidth / 2, top + o.capHeight, o.brimWidth, o.brimHeight);
+  ctx.fillStyle = o.color;
+  ctx.fillRect(centerX - o.capWidth / 2, top, o.capWidth, o.capHeight);
+  ctx.fillStyle = o.tasselColor;
+  ctx.fillRect(centerX + o.capWidth / 2 - o.tasselWidth, top, o.tasselWidth, o.tasselLength);
 }
 
 // Floats upward and fades over its lifetime; drawn above the player, never
