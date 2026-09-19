@@ -3,14 +3,104 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
+    <!-- Private application link, not a public site -- stays out of
+         search results permanently, not just until launch. See also
+         robots.txt. -->
+    <meta name="robots" content="noindex, nofollow">
     <title>The Story of Jakob</title>
     <link rel="icon" href="data:,">
     <link rel="stylesheet" href="./css/style.css">
+    <link rel="stylesheet" href="./css/ui.css">
     <script type="module" src="./js/main.js"></script>
   </head>
   <body>
-    <canvas id="game" width="1280" height="720" aria-label="The Story of Jakob: canvas test rectangle">
-      Your browser does not support canvas.
-    </canvas>
+    <div id="viewport">
+      <canvas id="game" width="1280" height="720" aria-label="The Story of Jakob gameplay canvas">
+        Your browser does not support canvas.
+      </canvas>
+
+      <!--
+        Real DOM title screen (PLAN.md task 4.1), replacing game.js's
+        placeholder. AGENTS.md §5: menus are never drawn on canvas. Shown/
+        hidden by ui.js; the Start button hands off to game.js.
+      -->
+      <div id="title-screen" class="dom-screen">
+        <div class="title-content">
+          <h1>The Story of Jakob</h1>
+          <p class="tagline">An interactive CV — a short playable application for Paradox Interactive.</p>
+
+          <div class="title-actions">
+            <button id="start-button" type="button" disabled>Start</button>
+            <!--
+              Task 4.2: title renders immediately, Start stays disabled
+              and this shows a percentage until the asset manifest
+              (assets.js) has loaded. aria-live so a screen reader
+              announces when it's ready without the page moving focus.
+            -->
+            <p id="loading-status" class="loading-status" aria-live="polite">
+              Loading… <span id="loading-percent">0%</span>
+            </p>
+            <a class="skip-link" href="./application.html">Skip to application</a>
+          </div>
+
+          <ul class="controls-list" aria-label="Controls">
+            <li><strong>Move</strong> — WASD / Arrow Keys</li>
+            <li><strong>Jump</strong> — Space</li>
+            <li><strong>Shoot</strong> — F</li>
+          </ul>
+        </div>
+      </div>
+
+      <!--
+        Real DOM comic viewer (PLAN.md task 4.3), replacing game.js's
+        placeholder. One panel on screen at a time -- comics.js swaps
+        #comic-panel-image's src and rebuilds the bubble layer on every
+        advance; content (which panels, what the bubbles say) is entirely
+        comic-data.js. Shown/hidden by ui.js in lockstep with game.js's
+        state.
+      -->
+      <div id="comic-screen" class="dom-screen" hidden>
+        <div class="comic-frame" id="comic-frame">
+          <img id="comic-panel-image" alt="">
+          <div id="comic-bubble-layer" class="comic-bubble-layer"></div>
+        </div>
+        <p class="comic-hint">Click or press Space to continue</p>
+      </div>
+
+      <!--
+        Persistent controls (PLAN.md task 4.4, AGENTS.md §5): Skip to
+        application and Mute/Unmute, present during gameplay and comics.
+        Last in #viewport so it paints above both the canvas and the
+        comic screen without needing a z-index. Hidden on the title
+        screen, which already has its own Skip link. Not a settings menu
+        -- these two controls are the entire out-of-game UI.
+      -->
+      <div id="persistent-controls" class="persistent-controls" hidden>
+        <a class="persistent-control" href="./application.html">Skip to application</a>
+        <button id="mute-button" class="persistent-control" type="button">Mute</button>
+      </div>
+    </div>
+
+    <!--
+      Mobile fallback (PLAN.md task 4.8, AGENTS.md §6: "No mobile
+      gameplay... A recruiter on a phone must never see a black canvas").
+      Pure CSS, no JS dependency, so it can never fail open into a blank
+      or broken page: style.css shows this and hides #viewport under
+      `@media (pointer: coarse)`, the standard signal for a touch-primary
+      device. application.html already doubles as the mobile fallback
+      destination (task 4.7), so this is just the explanation plus one
+      link there, not a second copy of its content.
+    -->
+    <div id="mobile-fallback">
+      <div class="mobile-fallback-content">
+        <h1>The Story of Jakob</h1>
+        <p>
+          This is a browser game, played with a keyboard — it needs a
+          desktop or laptop.
+        </p>
+        <p>On mobile, here's the application directly:</p>
+        <a class="mobile-fallback-cta" href="./application.html">Open the application</a>
+      </div>
+    </div>
   </body>
 </html>

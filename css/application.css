@@ -1,0 +1,236 @@
+/* Application screen — standalone destination page, doubles as the mobile
+   fallback (PLAN.md 4.7). Mobile-first: base rules target ~375px wide, wider
+   viewports get a centered, wider column below.
+
+   Structure: seven blocks, one scrolling column, no nav (PLAN.md task 4.5 --
+   project chat: a nav signals "this is long", which is the opposite of what
+   this page wants). */
+
+:root {
+  --ink: #1b2333;
+  --paper: #f7f3e3;
+  --muted: #5b6478;
+  --accent: #f6c453;
+  --pending-border: #c9a227;
+  --pending-bg: #fbf1cf;
+  --draft-bg: #c9574b;
+  --draft-ink: #fff6e8;
+  --max-width: 46rem;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--paper);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  line-height: 1.5;
+}
+
+/* DRAFT_COPY band (config.js): sticky, not fixed, so it doesn't cover
+   content -- it occupies its own row, then stays pinned once scrolled
+   past. Removed entirely by the module script at the end of the body
+   when DRAFT_COPY is false. */
+.draft-band {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.5rem 1rem;
+  background: var(--draft-bg);
+  color: var(--draft-ink);
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+header.hero,
+main,
+footer {
+  padding: 1.5rem 1.25rem;
+  max-width: var(--max-width);
+  margin: 0 auto;
+}
+
+header.hero {
+  padding-top: 2.5rem;
+  padding-bottom: 1rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.25rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+header.hero h1 {
+  margin: 0 0 0.75rem;
+  font-size: 2rem;
+  line-height: 1.15;
+}
+
+.lead {
+  font-size: 1.1rem;
+  margin: 0 0 0.5rem;
+}
+
+main {
+  padding-top: 1rem;
+}
+
+section {
+  padding-block: 1.5rem;
+  border-bottom: 1px solid rgba(27, 35, 51, 0.1);
+}
+
+section:last-child {
+  border-bottom: none;
+}
+
+section h2 {
+  margin: 0 0 0.75rem;
+  font-size: 1.4rem;
+}
+
+section p {
+  margin: 0 0 1rem;
+}
+
+section p:last-child {
+  margin-bottom: 0;
+}
+
+section ul {
+  margin: 0 0 1rem;
+  padding-left: 1.25rem;
+}
+
+section ul li {
+  margin-bottom: 0.5rem;
+}
+
+/* Run stats (task 4.5 block 3): "the CV as game results" -- label left,
+   content right, monospace to read as a stats readout rather than prose. */
+.stats {
+  margin: 0;
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 0.9rem;
+}
+
+.stats-row {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.15rem;
+  padding-block: 0.5rem;
+  border-bottom: 1px dashed rgba(27, 35, 51, 0.15);
+}
+
+.stats-row:last-child {
+  border-bottom: none;
+}
+
+.stats dt {
+  min-width: 0;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.stats dd {
+  min-width: 0; /* grid items don't shrink below content size by default --
+                    without this, the long monospace lines below overflow
+                    the row instead of wrapping. */
+  margin: 0;
+  overflow-wrap: break-word;
+}
+
+.stats-sublist {
+  list-style: none;
+  margin: 0.15rem 0;
+  padding-left: 1rem;
+}
+
+.stats-sublist li::before {
+  content: '· ';
+}
+
+.studentmossa-note {
+  margin-top: 1rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+}
+
+.thesis-title {
+  font-size: 1.15rem;
+  font-weight: 700;
+  margin: 0 0 0.15rem;
+}
+
+.thesis-subtitle {
+  font-style: italic;
+  color: var(--muted);
+  margin: 0 0 0.75rem;
+}
+
+.contact-line {
+  margin: 0 0 0.4rem;
+}
+
+.contact-line a {
+  color: var(--ink);
+}
+
+/* A document that isn't ready is visibly pending, never a dead link --
+   these are <span>s, not <a>, so there's nothing to click that does
+   nothing (PLAN.md task 4.6). */
+.link-pending {
+  display: inline-block;
+  color: var(--muted);
+  border-bottom: 1px dashed var(--pending-border);
+  cursor: not-allowed;
+}
+
+.link-pending--button {
+  padding: 0.5rem 0.9rem;
+  background: var(--pending-bg);
+  border: 1px dashed var(--pending-border);
+  border-radius: 0.4rem;
+}
+
+footer {
+  padding-top: 0.5rem;
+  padding-bottom: 2.5rem;
+  font-size: 0.9rem;
+}
+
+footer a {
+  color: var(--muted);
+}
+
+@media (min-width: 700px) {
+  header.hero h1 {
+    font-size: 2.75rem;
+  }
+
+  section h2 {
+    font-size: 1.6rem;
+  }
+
+  .stats-row {
+    grid-template-columns: 9rem 1fr;
+    gap: 1rem;
+  }
+}

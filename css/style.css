@@ -11,9 +11,75 @@ body {
   background: #111827;
 }
 
-canvas {
-  display: block;
+/* Logical 1280x720 game area (AGENTS.md §5), scaled to fit the window at a
+   fixed 16:9 aspect ratio. The canvas and every DOM screen (ui.css) stack
+   inside it at the same size, so a DOM screen lines up with the canvas
+   exactly and either can cover the other. */
+#viewport {
+  position: relative;
   width: min(100vw, calc(100vh * 16 / 9));
-  height: auto;
+  aspect-ratio: 16 / 9;
+}
+
+#viewport > canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
   background: #243247;
+}
+
+/* Mobile fallback (task 4.8): hidden by default, swapped in for
+   #viewport on a touch-primary device -- see the media query below. */
+#mobile-fallback {
+  display: none;
+}
+
+.mobile-fallback-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.25rem;
+  max-width: 26rem;
+  padding: 2rem 1.5rem;
+  text-align: center;
+  color: #f7f3e3;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.mobile-fallback-content h1 {
+  margin: 0;
+  font-size: 1.75rem;
+}
+
+.mobile-fallback-content p {
+  margin: 0;
+  color: #8b93a5;
+}
+
+.mobile-fallback-cta {
+  font-size: 1.1rem;
+  padding: 0.75rem 2rem;
+  background: #f6c453;
+  color: #1b2333;
+  border-radius: 0.4rem;
+  text-decoration: none;
+  font-weight: 700;
+}
+
+.mobile-fallback-cta:hover,
+.mobile-fallback-cta:focus-visible {
+  background: #ffd873;
+}
+
+@media (pointer: coarse) {
+  #viewport {
+    display: none;
+  }
+
+  #mobile-fallback {
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+  }
 }

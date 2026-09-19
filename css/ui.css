@@ -1,0 +1,279 @@
+/* ui.css — DOM screens that layer over the canvas (Milestone 4). Each one
+   is a full-cover child of #viewport (style.css positions/sizes it);
+   this file only styles what's inside them. AGENTS.md §5: menus and
+   narrative are DOM, never canvas. */
+
+.dom-screen {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #0d1117;
+  color: #f7f3e3;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  text-align: center;
+}
+
+.dom-screen[hidden] {
+  display: none;
+}
+
+/* Title screen (task 4.1) */
+
+.title-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.5rem;
+  padding: 2rem;
+}
+
+.title-content h1 {
+  margin: 0;
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+
+.tagline {
+  margin: 0;
+  color: #8b93a5;
+  max-width: 32rem;
+}
+
+.title-actions {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+#start-button {
+  font: inherit;
+  font-size: 1.25rem;
+  padding: 0.75rem 2.5rem;
+  background: #f6c453;
+  color: #1b2333;
+  border: none;
+  border-radius: 0.4rem;
+  cursor: pointer;
+}
+
+#start-button:hover,
+#start-button:focus-visible {
+  background: #ffd873;
+}
+
+#start-button:disabled {
+  background: #4a5568;
+  color: #8b93a5;
+  cursor: not-allowed;
+}
+
+/* Task 4.2: visible only while the (currently empty) asset manifest is
+   loading; ui.js hides it the instant Start is enabled. */
+.loading-status {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #8b93a5;
+}
+
+.skip-link {
+  color: #8b93a5;
+  font-size: 0.9rem;
+  text-decoration: underline;
+}
+
+.skip-link:hover,
+.skip-link:focus-visible {
+  color: #f7f3e3;
+}
+
+/* A non-gamer must never have to guess the controls (PLAN.md 4.1). */
+.controls-list {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.4rem 1.25rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  font-size: 0.95rem;
+  color: #c7cddb;
+}
+
+.controls-list li strong {
+  color: #f7f3e3;
+}
+
+/* Comic viewer (task 4.3). #comic-frame has no explicit size -- as a flex
+   child of .dom-screen it shrink-wraps to its image, which is capped to
+   the screen by max-width/max-height while keeping its own aspect ratio
+   (never cropped or stretched, panels vary in shape). That makes the
+   frame exactly the letterboxed image's box, so bubbles positioned as
+   percentages of the frame land on the artwork correctly at any scale. */
+.comic-frame {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  line-height: 0; /* no inline-image baseline gap under the frame */
+}
+
+#comic-panel-image {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  width: auto;
+  height: auto;
+}
+
+.comic-bubble-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Small and out of the way -- without it a non-gamer sits looking at the
+   first panel wondering whether the game has frozen (PLAN.md 4.3). */
+.comic-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 1rem;
+  transform: translateX(-50%);
+  margin: 0;
+  padding: 0.3rem 0.9rem;
+  font-size: 0.8rem;
+  color: #8b93a5;
+  background: rgba(13, 17, 23, 0.6);
+  border-radius: 999px;
+  pointer-events: none;
+}
+
+.comic-bubble {
+  /* x/y (comic-data.js) place the bubble's own top-left corner. */
+  position: absolute;
+  background: #f7f3e3;
+  color: #1b2333;
+  border: 2px solid #1b2333;
+  border-radius: 0.7rem;
+  padding: 0.5em 0.75em;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-weight: 700;
+  font-size: clamp(0.65rem, 1.6vw, 1.05rem);
+  line-height: 1.25;
+  text-align: center;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+}
+
+.comic-bubble--thought {
+  border-radius: 1.3rem;
+}
+
+/* Speech: a pointed triangle tail on the side the speaker is on.
+   Thought: two trailing circles instead, same side. */
+.comic-bubble--tail-left::after,
+.comic-bubble--tail-right::after,
+.comic-bubble--tail-up::after,
+.comic-bubble--tail-down::after {
+  content: '';
+  position: absolute;
+}
+
+.comic-bubble--speech.comic-bubble--tail-left::after {
+  left: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 9px solid transparent;
+  border-right-color: #1b2333;
+}
+
+.comic-bubble--speech.comic-bubble--tail-right::after {
+  right: -12px;
+  top: 50%;
+  transform: translateY(-50%);
+  border: 9px solid transparent;
+  border-left-color: #1b2333;
+}
+
+.comic-bubble--speech.comic-bubble--tail-up::after {
+  left: 50%;
+  top: -12px;
+  transform: translateX(-50%);
+  border: 9px solid transparent;
+  border-bottom-color: #1b2333;
+}
+
+.comic-bubble--speech.comic-bubble--tail-down::after {
+  left: 50%;
+  bottom: -12px;
+  transform: translateX(-50%);
+  border: 9px solid transparent;
+  border-top-color: #1b2333;
+}
+
+.comic-bubble--thought::before,
+.comic-bubble--thought::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  background: #f7f3e3;
+  border: 2px solid #1b2333;
+}
+
+.comic-bubble--thought::before {
+  width: 12px;
+  height: 12px;
+}
+
+.comic-bubble--thought::after {
+  width: 7px;
+  height: 7px;
+}
+
+.comic-bubble--thought.comic-bubble--tail-left::before { left: -16px; top: 50%; transform: translateY(-50%); }
+.comic-bubble--thought.comic-bubble--tail-left::after { left: -26px; top: 50%; transform: translateY(-50%); }
+
+.comic-bubble--thought.comic-bubble--tail-right::before { right: -16px; top: 50%; transform: translateY(-50%); }
+.comic-bubble--thought.comic-bubble--tail-right::after { right: -26px; top: 50%; transform: translateY(-50%); }
+
+.comic-bubble--thought.comic-bubble--tail-up::before { left: 50%; top: -16px; transform: translateX(-50%); }
+.comic-bubble--thought.comic-bubble--tail-up::after { left: 50%; top: -28px; transform: translateX(-50%); }
+
+.comic-bubble--thought.comic-bubble--tail-down::before { left: 50%; bottom: -16px; transform: translateX(-50%); }
+.comic-bubble--thought.comic-bubble--tail-down::after { left: 50%; bottom: -28px; transform: translateX(-50%); }
+
+/* Persistent controls (task 4.4): Skip to application and Mute/Unmute,
+   present during gameplay and comics. Small, low contrast, corner-pinned
+   so it never competes with the game for attention -- the opposite
+   styling from the title screen's own, much bigger Skip link. Last child
+   of #viewport (index.html), so it paints above the canvas and the comic
+   screen with no z-index needed. */
+.persistent-controls {
+  position: absolute;
+  right: 0.6rem;
+  bottom: 0.6rem;
+  display: flex;
+  gap: 0.6rem;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.persistent-controls[hidden] {
+  display: none;
+}
+
+.persistent-control {
+  font: inherit;
+  font-size: 0.75rem;
+  color: rgba(247, 243, 227, 0.55);
+  background: rgba(13, 17, 23, 0.45);
+  border: none;
+  border-radius: 999px;
+  padding: 0.3rem 0.7rem;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.persistent-control:hover,
+.persistent-control:focus-visible {
+  color: #f7f3e3;
+  background: rgba(13, 17, 23, 0.75);
+}

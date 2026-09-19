@@ -1,0 +1,80 @@
+// ui.js — DOM screens layered over the canvas (AGENTS.md §5: menus,
+// narrative copy and application text are never drawn on canvas). Milestone
+// 4 replaces game.js's placeholder screens one at a time; this file owns
+// showing/hiding the real ones and wiring their controls back into
+// game.js. game.js never touches the DOM itself.
+
+import { startFromTitle, subscribeToStateChange, STATE } from './game.js';
+import { loadAssets } from './assets.js';
+import { initComicViewer, showComic, hideComic } from './comics.js';
+
+export function initUI() {
+  initTitleScreen();
+  initComicViewer();
+  initPersistentControls();
+
+  const persistentControls = document.querySelector('#persistent-controls');
+
+  // One subscription (subscribeToStateChange only ever holds the latest
+  // listener) drives every DOM screen that reacts to game.js's state:
+  // - the comic screen shows/hides itself in lockstep with COMIC, entered
+  //   from the title screen and, mid-level, from level.js's comic-trigger
+  //   entries (game.js's checkComicTriggers).
+  // - persistent controls (task 4.4) are present during gameplay and
+  //   comics, but not on TITLE, which already has its own Skip link.
+  // - APPLICATION (task 4.9) isn't a screen -- finishing the game lands
+  //   on the real application.html, ending the page here.
+  subscribeToStateChange((state, info) => {
+    if (state === STATE.COMIC) {
+      showComic(info.comicId);
+    } else {
+      hideComic();
+    }
+
+    if (persistentControls) persistentControls.hidden = state === STATE.TITLE;
+
+    if (state === STATE.APPLICATION) window.location.href = './application.html';
+  });
+}
+
+// Mute/Unmute (task 4.4). No audio module exists yet (Milestone 7) --
+// this is the real toggle and state, just with nothing hooked up to play
+// or silence yet. Milestone 7 reads isMuted() before playing anything;
+// the control itself never has to change.
+let muted = false;
+export function isMuted() {
+  return muted;
+}
+
+function initPersistentControls() {
+  const muteButton = document.querySelector('#mute-button');
+  if (!muteButton) return;
+
+  muteButton.addEventListener('click', () => {
+    muted = !muted;
+    muteButton.textContent = muted ? 'Unmute' : 'Mute';
+  });
+}
+
+function initTitleScreen() {
+  const screen = document.querySelector('#title-screen');
+  const startButton = document.querySelector('#start-button');
+  const loadingStatus = document.querySelector('#loading-status');
+  const loadingPercent = document.querySelector('#loading-percent');
+  if (!screen || !startButton) return;
+
+  startButton.addEventListener('click', () => {
+    screen.hidden = true;
+    startFromTitle();
+  });
+
+  // Task 4.2: title is already visible (no blank wait); Start stays
+  // disabled and shows a percentage until the manifest has loaded.
+  loadAssets((fraction) => {
+    if (loadingPercent) loadingPercent.textContent = `${Math.round(fraction * 100)}%`;
+  }).then(() => {
+    startButton.disabled = false;
+    startButton.focus();
+    if (loadingStatus) loadingStatus.hidden = true;
+  });
+}
