@@ -105,7 +105,12 @@ export const STAIRCASE = {
   // the number of steps, the height of the top landing and the approach
   // platforms that climb to it all fall out of the numbers here, so the
   // staircase always matches how far the auto-run actually travels.
-  stepDrop: 44, // px each step sits below the one before it
+  // px each step sits below the one before it. This also sets how high
+  // the top landing is (steps x drop), and so how far the handover has to
+  // lift a player who arrived along the ground instead of climbing the
+  // approach platforms -- see beginUtspring in game.js. Keep it shallow:
+  // raising it makes that lift more visible.
+  stepDrop: 32,
 
   // --- Timings
   descentDuration: 3.0, // s of auto-run from the handover to the stop

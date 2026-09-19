@@ -74,7 +74,10 @@ const STAIR_TOP_CLEARANCE = STAIR_STEPS * STAIRCASE.stepDrop; // 220px above the
 // single hop exceeding CLEARANCE_HIGH, which is already a proven-reachable
 // rise elsewhere in this file. 220 / 130 -> 2 hops of 110px each.
 const STAIR_ASCENT_STEPS = Math.ceil(STAIR_TOP_CLEARANCE / CLEARANCE_HIGH); // 2
-const STAIR_ASCENT_RISE = STAIR_TOP_CLEARANCE / STAIR_ASCENT_STEPS; // 110
+const STAIR_ASCENT_RISE = STAIR_TOP_CLEARANCE / STAIR_ASCENT_STEPS; // 80
+
+// The top of the first step: the mark the handover stands the player on.
+const STAIR_TOP_Y = WORLD.groundY - STAIR_TOP_CLEARANCE;
 
 // Where the sequence ends is Lund's derived length; everything else in the
 // staircase is measured backwards from there, so the section still runs
@@ -181,7 +184,15 @@ export const LEVEL = [
   // sequence in game.js, which auto-runs the descent, rains confetti,
   // flashes, puts the studentmössa on the player and shows the title
   // card before handing control back. Fires exactly once per playthrough.
-  { type: 'utspring-trigger', x: STAIRCASE_START_X },
+  //
+  // `y` is the mark: the top of the first step, where the handover stands
+  // the player. The ground below the staircase is flat and open -- there
+  // is no wall to stop anyone simply holding right -- so without this a
+  // player arrives *underneath* the stairs and runs the whole beat along
+  // level ground, never touching the thing it is named after. Someone who
+  // did climb the approach platforms is already at exactly this height,
+  // so for them it changes nothing.
+  { type: 'utspring-trigger', x: STAIRCASE_START_X, y: STAIR_TOP_Y },
 
   // One continuous level, two places (AGENTS.md §3): the backdrop swaps
   // right where the studentmössa is earned, no loading break.

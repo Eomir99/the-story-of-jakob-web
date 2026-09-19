@@ -70,7 +70,7 @@ let platforms; // task C: { x, y, width, height }, one-way landable rectangles
 let checkpoints; // sorted ascending by x
 let nextCheckpointIndex;
 let sectionBounds; // sorted ascending by x: [{ x, section }], x = -Infinity is section 'lund'
-let utspringTriggerX; // x that hands control to the utspring sequence, or null
+let utspringTrigger; // { x, markY } that hands control to the utspring, or null
 let comicTriggers; // sorted ascending by x: [{ x, comicId, next }]
 let nextComicTriggerIndex;
 // Task B: the currently-closed arena wall, and the boss that owns it.
@@ -176,7 +176,7 @@ function updateUtspring(dt) {
   if (utspringPhase === UTSPRING.IDLE) {
     // Fires exactly once per playthrough: the phase leaves IDLE here and
     // only ever ends at DONE, which returns above.
-    if (utspringTriggerX === null || player.x < utspringTriggerX) return;
+    if (!utspringTrigger || player.x < utspringTrigger.x) return;
     beginUtspring();
     return;
   }
@@ -215,6 +215,18 @@ function updateUtspring(dt) {
 
 function beginUtspring() {
   enterUtspringPhase(UTSPRING.DESCENT);
+  // Stand the player on their mark: the top of the first step. The
+  // staircase descends from a raised landing, and the ground beneath it
+  // is flat and open with no wall, so a player who simply held right
+  // arrives under the stairs rather than on them -- and would otherwise
+  // run the whole beat along level ground, never touching the staircase.
+  // This is the one instant where placing the character is legitimate:
+  // the sequence has just taken control and the player has none. Anyone
+  // who climbed the approach platforms is already at this height, so it
+  // is a no-op for them.
+  player.y = utspringTrigger.markY - player.height;
+  player.vy = 0;
+  player.onGround = true;
   // Input is ignored for the whole sequence, fire included, and
   // setInputSuppressed drops every held and pressed key on the way in and
   // on the way out -- so nothing the player mashed during these five
@@ -307,7 +319,7 @@ function loadLevel() {
   graduationBoss = null;
   pickups = [];
   platforms = [];
-  utspringTriggerX = null;
+  utspringTrigger = null;
   const checkpointXs = [];
   const transitions = [];
   const triggers = [];
@@ -336,7 +348,7 @@ function loadLevel() {
     } else if (entry.type === 'section-transition') {
       transitions.push({ x: entry.x, section: entry.section });
     } else if (entry.type === 'utspring-trigger') {
-      utspringTriggerX = entry.x;
+      utspringTrigger = { x: entry.x, markY: y };
     } else if (entry.type === 'comic-trigger') {
       triggers.push({ x: entry.x, comicId: entry.comicId, next: entry.next });
     }
