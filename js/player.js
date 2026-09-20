@@ -1,7 +1,7 @@
 // player.js — movement, gravity, jump, ground collision, shooting,
 // damage/death/respawn.
 
-import { PLAYER, PROJECTILE, WORLD, PICKUP, BARK, STUDENTMOSSA_OVERLAY } from './config.js';
+import { PLAYER, PROJECTILE, WORLD, PICKUP, BARK, STUDENTMOSSA_OVERLAY, DAMAGE_FLASH } from './config.js';
 import { isActionDown, wasActionPressed } from './input.js';
 
 export function createPlayer(x, y) {
@@ -14,6 +14,21 @@ export function createPlayer(x, y) {
     vy: 0,
     facing: 1, // 1 = right, -1 = left
     onGround: false,
+    // Coyote time (PLAYER.coyoteTime): counts down from the moment the
+    // player stops being on the ground. A jump is allowed while it is
+    // still running, so stepping off a ledge and pressing jump a frame or
+    // two late still jumps.
+    coyoteTimer: 0,
+    // Jump buffering (PLAYER.jumpBufferTime): a jump pressed while still
+    // in the air is held here and spent on landing.
+    jumpBufferTimer: 0,
+    // Landing squash (PLAYER.landSquash): counts down after a hard
+    // landing and drives the draw-time scale. Visual only.
+    landSquashTimer: 0,
+    // Damage flash (DAMAGE_FLASH.playerDuration): a short, opaque colour
+    // pop the instant damage lands, separate from the longer
+    // invulnerability blink that follows it.
+    hitFlashTimer: 0,
     fireCooldown: 0,
     hp: PLAYER.maxHp,
     invulnerableFor: 0,
@@ -99,10 +114,41 @@ export function updatePlayer(player, dt, spawnPoint, platforms = []) {
   player.vy += WORLD.gravity * dt;
   if (player.vy > PLAYER.maxFallSpeed) player.vy = PLAYER.maxFallSpeed;
 
-  if (wasActionPressed('jump') && player.onGround) {
+  // Coyote time. Refreshed every step the player is standing on
+  // something, so the window always starts the moment they stop standing
+  // on it -- whether they walked off a ledge or the ledge ended.
+  if (player.onGround) player.coyoteTimer = PLAYER.coyoteTime;
+  else if (player.coyoteTimer > 0) player.coyoteTimer -= dt;
+
+  // Jump buffering. The press is recorded whenever it happens; whether it
+  // can be spent is decided below, so an early press survives until the
+  // player actually lands.
+  if (wasActionPressed('jump')) player.jumpBufferTimer = PLAYER.jumpBufferTime;
+  else if (player.jumpBufferTimer > 0) player.jumpBufferTimer -= dt;
+
+  if (player.jumpBufferTimer > 0 && (player.onGround || player.coyoteTimer > 0)) {
     player.vy = PLAYER.jumpVelocity;
     player.onGround = false;
+    player.coyoteTimer = 0; // spent -- one jump per departure from the ground
+    player.jumpBufferTimer = 0; // spent -- one jump per press
   }
+
+  // Variable jump height: while rising with jump not held, the climb is
+  // capped. Height already gained is kept, so releasing later gives a
+  // taller hop -- which is what makes it feel like a dial rather than two
+  // fixed jumps.
+  if (!isActionDown('jump') && player.vy < 0) {
+    const cutVelocity = PLAYER.jumpVelocity * PLAYER.jumpCutMultiplier;
+    if (player.vy < cutVelocity) player.vy = cutVelocity;
+  }
+
+  if (player.landSquashTimer > 0) player.landSquashTimer -= dt;
+  if (player.hitFlashTimer > 0) player.hitFlashTimer -= dt;
+
+  // Captured before collision resolution zeroes it: how hard this step's
+  // landing, if there is one, actually was.
+  const impactSpeed = player.vy;
+  const wasOnGround = player.onGround;
 
   const feetBefore = player.y + player.height;
   player.x += player.vx * dt;
@@ -132,6 +178,10 @@ export function updatePlayer(player, dt, spawnPoint, platforms = []) {
     player.onGround = true;
   } else {
     player.onGround = landedOnPlatform;
+  }
+
+  if (!wasOnGround && player.onGround && impactSpeed >= PLAYER.landSquash.minImpactSpeed) {
+    player.landSquashTimer = PLAYER.landSquash.duration;
   }
 
   if (player.fireCooldown > 0) player.fireCooldown -= dt;
@@ -166,6 +216,7 @@ function spawnProjectile(player) {
 export function damagePlayer(player, amount) {
   if (player.dead || player.invincible || player.invulnerableFor > 0) return;
   player.hp -= amount;
+  player.hitFlashTimer = DAMAGE_FLASH.playerDuration;
   player.invulnerableFor = PLAYER.invulnerabilityDuration;
   if (player.hp <= 0) {
     player.dead = true;
@@ -179,6 +230,10 @@ function respawnPlayer(player, spawnPoint) {
   player.vx = 0;
   player.vy = 0;
   player.onGround = false;
+  player.coyoteTimer = 0;
+  player.jumpBufferTimer = 0;
+  player.landSquashTimer = 0;
+  player.hitFlashTimer = 0;
   player.hp = PLAYER.maxHp;
   player.dead = false;
   player.invulnerableFor = PLAYER.invulnerabilityDuration;
@@ -193,20 +248,54 @@ export function drawPlayer(ctx, player) {
   // Blink while invulnerable so the grace period reads clearly. Fading
   // rather than flashing white, which would be hard to read against the
   // white studentmössa overlay.
-  const blinking = player.invulnerableFor > 0 && Math.floor(player.invulnerableFor * 12) % 2 === 0;
+  const blinking =
+    player.invulnerableFor > 0 && Math.floor(player.invulnerableFor * PLAYER.invulnerableBlinkRate) % 2 === 0;
   // Grey-box stand-in for the outfit change: tint the rectangle by the
   // current pickup's color. Real sprite swap arrives with art (Milestone
   // 6, AGENTS.md §6) -- this just makes the state change observable
   // before then. The studentmössa is deliberately not a tint: AGENTS.md
   // §6 makes it an overlay on the base character, drawn below.
-  const baseColor = PICKUP.colors[player.outfit] || PLAYER.color;
-  ctx.globalAlpha = blinking ? 0.35 : 1;
+  // The damage flash overrides both the outfit colour and the blink. The
+  // blink exists to show that the grace period is running, but the moment
+  // of the hit itself must never be the moment the player is hardest to
+  // see.
+  const flashing = player.hitFlashTimer > 0;
+  const baseColor = flashing ? DAMAGE_FLASH.playerColor : PICKUP.colors[player.outfit] || PLAYER.color;
+  ctx.globalAlpha = blinking && !flashing ? PLAYER.invulnerableBlinkAlpha : 1;
+
+  // Landing squash, applied around the feet so the character stays planted
+  // on the ground while the top of it compresses. The studentmössa rides
+  // along inside the same transform; barks deliberately do not, since text
+  // stretching with a landing would just look broken.
+  ctx.save();
+  applyLandSquash(ctx, player);
+  const x = Math.round(player.x);
+  const y = Math.round(player.y);
   ctx.fillStyle = baseColor;
-  ctx.fillRect(Math.round(player.x), Math.round(player.y), player.width, player.height);
+  ctx.fillRect(x, y, player.width, player.height);
+  // See PLAYER.outlineColor in config.js: the rim is what keeps the
+  // player findable across every background section.
+  ctx.strokeStyle = PLAYER.outlineColor;
+  ctx.lineWidth = PLAYER.outlineWidth;
+  ctx.strokeRect(x, y, player.width, player.height);
   if (player.outfit === 'studentmossa') drawStudentmossa(ctx, player);
+  ctx.restore();
   ctx.globalAlpha = 1;
 
   drawBarks(ctx, player);
+}
+
+function applyLandSquash(ctx, player) {
+  if (player.landSquashTimer <= 0) return;
+  const squash = PLAYER.landSquash;
+  const t = player.landSquashTimer / squash.duration; // 1 at impact, 0 when done
+  const scaleX = 1 + (squash.scaleX - 1) * t;
+  const scaleY = 1 + (squash.scaleY - 1) * t;
+  const centerX = player.x + player.width / 2;
+  const feetY = player.y + player.height;
+  ctx.translate(centerX, feetY);
+  ctx.scale(scaleX, scaleY);
+  ctx.translate(-centerX, -feetY);
 }
 
 // The studentmössa overlay (AGENTS.md §6: drawn on the base character,

@@ -1,10 +1,9 @@
 // ui.js — DOM screens layered over the canvas (AGENTS.md §5: menus,
-// narrative copy and application text are never drawn on canvas). Milestone
-// 4 replaces game.js's placeholder screens one at a time; this file owns
-// showing/hiding the real ones and wiring their controls back into
+// narrative copy and application text are never drawn on canvas). This
+// file owns showing and hiding them and wiring their controls back into
 // game.js. game.js never touches the DOM itself.
 
-import { startFromTitle, subscribeToStateChange, subscribeToTitleCard, STATE } from './game.js';
+import { startFromTitle, subscribeToStateChange, subscribeToTitleCard, subscribeToResumeHint, STATE } from './game.js';
 import { loadAssets } from './assets.js';
 import { initComicViewer, showComic, hideComic } from './comics.js';
 
@@ -13,6 +12,7 @@ export function initUI() {
   initComicViewer();
   initPersistentControls();
   initStudentmossaCard();
+  initResumeHint();
 
   const persistentControls = document.querySelector('#persistent-controls');
 
@@ -48,6 +48,20 @@ function initStudentmossaCard() {
   subscribeToTitleCard((visible, opacity) => {
     card.hidden = !visible;
     card.style.opacity = String(opacity);
+  });
+}
+
+// The focus/visibility hint (task 3.10). Not a pause menu -- task 3.10
+// forbids one -- and not interactive: game.js shows it over the frozen
+// frame and hides it again the moment focus returns, and the stylesheet
+// keeps pointer events off it so the click that restores focus goes
+// straight through to the canvas.
+function initResumeHint() {
+  const hint = document.querySelector('#resume-hint');
+  if (!hint) return;
+
+  subscribeToResumeHint((visible) => {
+    hint.hidden = !visible;
   });
 }
 

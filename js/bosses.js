@@ -9,7 +9,7 @@
 // never touched by Graduation: AGENTS.md is explicit that mechanic is
 // Research-Golem-only.
 
-import { RESEARCH_GOLEM, GRADUATION, WORLD, TELEGRAPH, CLAIM_PHASE, PLAYER, PROJECTILE, BOSS_PROJECTILE_LIFETIME } from './config.js';
+import { RESEARCH_GOLEM, GRADUATION, WORLD, TELEGRAPH, CLAIM_PHASE, PLAYER, PROJECTILE, BOSS_PROJECTILE_LIFETIME, DAMAGE_FLASH, HAZARD } from './config.js';
 
 // AGENTS.md §4: every attack's wind-up must be 0.8-1.0s. Enforced once at
 // load time so a future pattern can't silently ship without a fair tell.
@@ -324,15 +324,26 @@ function buildClaims(boss, setIndex) {
 }
 
 // Called by game.js when a player projectile overlaps a claim's hitbox.
+//
+// Audit finding A11: holding fire down used to resolve the phase without
+// ever reading a claim, because a wrong shot only healed the boss a
+// little and left all three claims standing -- rapid fire kept hitting
+// them until one turned out correct. While boss.tauntTimer is running
+// (set by a wrong shot below) every claim is unhittable, not just the one
+// that was wrong, so a spray of shots gets one hit and then two seconds
+// of nothing no matter how fast it keeps firing.
 export function findResearchGolemClaimHit(boss, projectile) {
-  if (boss.phase !== 'claim' || !boss.claims) return null;
+  if (boss.phase !== 'claim' || !boss.claims || boss.tauntTimer > 0) return null;
   return boss.claims.find((claim) => aabbOverlap(projectile, claim)) || null;
 }
 
 // Resolves a claim shot: correct breaks the shield and resumes the fight in
 // phase B (faster, per AGENTS.md §4); wrong heals the boss slightly and
 // taunts, but never undoes meaningful progress -- the player can keep
-// trying the remaining claims.
+// trying the remaining claims. boss.claims is never touched here on a
+// wrong shot: the same three claims, in the same positions, reappear once
+// the lockout (tauntTimer, see findResearchGolemClaimHit) runs out, so
+// nothing about the puzzle itself resets.
 export function resolveClaimShot(boss, claim) {
   if (claim.correct) {
     boss.phase = 'phaseB';
@@ -344,7 +355,9 @@ export function resolveClaimShot(boss, claim) {
       boss.hp + RESEARCH_GOLEM.maxHp * CLAIM_PHASE.wrongAnswerHealFraction
     );
     boss.lastClaimTaunt = CLAIM_PHASE.taunts[Math.floor(Math.random() * CLAIM_PHASE.taunts.length)];
-    boss.tauntTimer = 1.5;
+    // Also the claim lockout (findResearchGolemClaimHit): closes all
+    // three claims, not just the wrong one, for this long.
+    boss.tauntTimer = CLAIM_PHASE.tauntDuration;
   }
 }
 
@@ -360,16 +373,28 @@ function drawBossBody(ctx, boss, spec) {
   if (!boss.alive) return;
 
   let color = spec.color;
-  if (boss.hitFlash > 0) {
-    color = '#ffffff';
-  } else if (boss.telegraph) {
+  if (boss.telegraph) {
     // Visible tell: the boss glows toward telegraphColor as the wind-up
     // nears completion, so an attack is never a surprise (AGENTS.md §4).
     const progress = 1 - boss.telegraph.timer / boss.telegraph.duration;
     color = lerpColor(spec.color, spec.telegraphColor, progress);
   }
+  // Blended over whatever the state colour is, so sustained fire reads as
+  // a series of hits rather than as a strobing white slab, and never
+  // covers up a wind-up the player is trying to read.
+  if (boss.hitFlash > 0) {
+    color = lerpColor(color, DAMAGE_FLASH.enemyColor, Math.min(1, boss.hitFlash / spec.hitFlashDuration));
+  }
+  const x = Math.round(boss.x);
+  const y = Math.round(boss.y);
   ctx.fillStyle = color;
-  ctx.fillRect(Math.round(boss.x), Math.round(boss.y), boss.width, boss.height);
+  ctx.fillRect(x, y, boss.width, boss.height);
+  // Same hazard rim as the enemies (config.js HAZARD). The Research
+  // Golem's tan body sat almost exactly on the Handels columns' gold
+  // without it.
+  ctx.strokeStyle = HAZARD.outlineColor;
+  ctx.lineWidth = HAZARD.bodyOutlineWidth;
+  ctx.strokeRect(x, y, boss.width, boss.height);
 }
 
 function drawBossHpBar(ctx, boss, spec) {
@@ -409,45 +434,54 @@ export function drawGraduationBossHpBar(ctx, boss) {
 export function drawResearchGolemClaims(ctx, boss) {
   if (boss.phase !== 'claim' || !boss.claims) return;
 
-  for (const claim of boss.claims) {
-    ctx.fillStyle = '#1b2333';
-    ctx.fillRect(Math.round(claim.x), Math.round(claim.y), claim.width, claim.height);
-    ctx.strokeStyle = '#f7f3e3';
-    ctx.lineWidth = 2;
-    ctx.strokeRect(Math.round(claim.x), Math.round(claim.y), claim.width, claim.height);
-
-    ctx.fillStyle = '#f7f3e3';
-    ctx.font = '20px sans-serif';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(claim.text, Math.round(claim.x + claim.width / 2), Math.round(claim.y + claim.height / 2));
-
-    if (claim.correct) {
-      // Floating evidence marker: visually unmistakable which claim is
-      // supported (AGENTS.md §4), independent of reading the text. Sits to
-      // the side, not above -- claims stack tightly, so "above" could land
-      // inside the claim stacked on top of this one.
-      const bob = Math.sin(boss.claimClock * CLAIM_PHASE.evidenceBobSpeed) * CLAIM_PHASE.evidenceBobAmplitude;
-      const markerX = claim.x - 22 + bob;
-      const markerY = claim.y + claim.height / 2;
-      ctx.fillStyle = CLAIM_PHASE.evidenceMarkerColor;
-      ctx.beginPath();
-      ctx.arc(markerX, markerY, CLAIM_PHASE.evidenceMarkerSize / 2, 0, Math.PI * 2);
-      ctx.fill();
-    }
-  }
-
   const claimsTop = boss.claims[0].y;
   const claimsCenterX = boss.x + boss.width / 2;
+  // Locked out after a wrong shot (findResearchGolemClaimHit, audit
+  // finding A11): the boxes, the text and the evidence marker all
+  // disappear -- not just the one that was wrong -- so there is nothing
+  // to spray fire at. Positions are kept (boss.claims is untouched) so
+  // they reappear exactly where they were the moment the lockout ends.
+  const locked = boss.tauntTimer > 0;
 
-  ctx.fillStyle = '#f7f3e3';
-  ctx.font = '18px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText(CLAIM_PHASE.promptText, Math.round(claimsCenterX), Math.round(claimsTop - CLAIM_PHASE.promptGapAboveClaims));
+  if (!locked) {
+    for (const claim of boss.claims) {
+      ctx.fillStyle = CLAIM_PHASE.boxFillColor;
+      ctx.fillRect(Math.round(claim.x), Math.round(claim.y), claim.width, claim.height);
+      ctx.strokeStyle = CLAIM_PHASE.boxBorderColor;
+      ctx.lineWidth = CLAIM_PHASE.boxBorderWidth;
+      ctx.strokeRect(Math.round(claim.x), Math.round(claim.y), claim.width, claim.height);
+
+      ctx.fillStyle = CLAIM_PHASE.textColor;
+      ctx.font = CLAIM_PHASE.textFont;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(claim.text, Math.round(claim.x + claim.width / 2), Math.round(claim.y + claim.height / 2));
+
+      if (claim.correct) {
+        // Floating evidence marker: visually unmistakable which claim is
+        // supported (AGENTS.md §4), independent of reading the text.
+        const bob = Math.sin(boss.claimClock * CLAIM_PHASE.evidenceBobSpeed) * CLAIM_PHASE.evidenceBobAmplitude;
+        const markerX = claim.x - CLAIM_PHASE.evidenceMarkerGapX + bob;
+        const markerY = claim.y + claim.height / 2;
+        ctx.fillStyle = CLAIM_PHASE.evidenceMarkerColor;
+        ctx.beginPath();
+        ctx.arc(markerX, markerY, CLAIM_PHASE.evidenceMarkerSize / 2, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+
+    ctx.fillStyle = CLAIM_PHASE.promptColor;
+    ctx.font = CLAIM_PHASE.promptFont;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
+    ctx.fillText(CLAIM_PHASE.promptText, Math.round(claimsCenterX), Math.round(claimsTop - CLAIM_PHASE.promptGapAboveClaims));
+  }
 
   if (boss.tauntTimer > 0 && boss.lastClaimTaunt) {
-    ctx.fillStyle = '#f0806f';
+    ctx.fillStyle = CLAIM_PHASE.tauntColor;
+    ctx.font = CLAIM_PHASE.promptFont;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'alphabetic';
     ctx.fillText(boss.lastClaimTaunt, Math.round(claimsCenterX), Math.round(claimsTop - CLAIM_PHASE.tauntGapAboveClaims));
   }
 }

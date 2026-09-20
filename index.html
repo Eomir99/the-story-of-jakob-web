@@ -85,6 +85,24 @@
       </div>
 
       <!--
+        Focus/visibility hint (PLAN.md task 3.10). The simulation freezes
+        whenever the window loses focus, and one line over the frozen
+        frame is what keeps a stopped game reading as "waiting for you"
+        rather than "crashed". It used to be drawn on the canvas, which
+        AGENTS.md §5 does not allow -- canvas renders gameplay only, and
+        this is UI copy. game.js owns when it shows; ui.js owns the
+        element.
+
+        Not a pause menu (task 3.10 forbids one) and not interactive:
+        pointer-events stay off in the stylesheet so the click that
+        dismisses it reaches the canvas and restores focus, exactly as it
+        did before.
+      -->
+      <div id="resume-hint" class="resume-hint" hidden>
+        <p class="resume-hint-text">Click to resume</p>
+      </div>
+
+      <!--
         Persistent controls (PLAN.md task 4.4, AGENTS.md §5): Skip to
         application and Mute/Unmute, present during gameplay and comics.
         Last in #viewport so it paints above both the canvas and the

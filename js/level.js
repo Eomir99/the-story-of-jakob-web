@@ -24,7 +24,7 @@
 // together, then a quiet stretch, then one on a platform) rather than
 // landing on a steady rhythm, which would read as filler.
 
-import { WORLD, PLAYER, ENEMY_TRASH, ENEMY_INBOX, ENEMY_EXCHANGE, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, STAIRCASE } from './config.js';
+import { WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, STAIRCASE } from './config.js';
 
 const SPAWN_X = 120;
 
@@ -44,11 +44,36 @@ const platformTop = (clearance) => WORLD.groundY - clearance;
 const ARENA_WIDTH = 600;
 
 // --- Lund (12,600px: SPAWN_X to the end of the utspring) ------------------
-const TRASH_GROUND_X = SPAWN_X + 600; // 720
-const TRASH_JUMP_X = TRASH_GROUND_X + 500; // 1220 -- clustered with the one above
-const PLATFORM_A_X = TRASH_JUMP_X + 3200; // 4420 -- quiet stretch, then a jump
-const PLATFORM_B_X = PLATFORM_A_X + 900; // 5320
-const TRASH_LEDGE_PLATFORM_X = PLATFORM_B_X + 2200; // 7520 -- carries the ledge trash enemy
+// The maths book (the enemy-behaviours brief): one behaviour, placed three
+// times so it plays differently each time despite identical logic --
+//   1  MATHBOOK_1_X             alone, flat ground, nothing else on screen.
+//                               The game's shooting tutorial; this
+//                               encounter cannot be lost.
+//   2  MATHBOOK_2_PLATFORM_X    on a ledge -- jump-timed shot, or walk under.
+//   3  MATHBOOK_3_PLATFORM_X    past a real gap between two platforms --
+//                               jump it while its shot may be in the air,
+//                               or skip it at ground level like the ledge.
+const MATHBOOK_1_X = SPAWN_X + 780; // 900 -- alone; nothing else until PLATFORM_A_X
+const PLATFORM_A_X = MATHBOOK_1_X + 1400; // 2300 -- quiet stretch, then a jump
+const PLATFORM_B_X = PLATFORM_A_X + 900; // 3200 -- clustered with A
+const MATHBOOK_2_PLATFORM_X = PLATFORM_B_X + 1600; // 4800 -- carries the ledge book
+const GAP_APPROACH_PLATFORM_X = MATHBOOK_2_PLATFORM_X + 1600; // 6400 -- launch side of the gap
+const MATHBOOK_3_GAP_WIDTH = 200; // px -- comfortably under the ~268px max jump range
+const MATHBOOK_3_PLATFORM_X = GAP_APPROACH_PLATFORM_X + PLATFORM.width + MATHBOOK_3_GAP_WIDTH; // 6820 -- carries the far-side book
+
+// Checkpoints (AGENTS.md §6: invisible checkpoints; polish-pass audit
+// finding A2). Before this, Lund carried none at all -- the only
+// checkpoint anywhere in the section was UTSPRING_END_X, so dying at the
+// gap jump (6,820) replayed the entire section from SPAWN_X (120), about
+// 18.6s of running back through content that had already been cleared.
+// Three checkpoints keep every death in Lund under ~15s of replay:
+const CHECKPOINT_AFTER_MATHBOOK_1_X = MATHBOOK_1_X + 200; // 1100 -- past the tutorial book
+const CHECKPOINT_BEFORE_GAP_X = GAP_APPROACH_PLATFORM_X - 300; // 6100 -- short of the gap jump
+// STAIRCASE_START_X is defined below (it's derived from the descent
+// timing); this checkpoint sits one pixel short of it. Reaching it means
+// the ascent climb is already done, so respawning here drops the player
+// right back at the top -- one step forward re-triggers the utspring
+// exactly as if they'd just climbed it.
 
 // --- The utspring staircase (PLAN.md task 3.5) ----------------------------
 // The staircase is level data: a descending run of the ordinary platform
@@ -84,6 +109,7 @@ const STAIR_TOP_Y = WORLD.groundY - STAIR_TOP_CLEARANCE;
 // its full 12,600px.
 const UTSPRING_END_X = SPAWN_X + 12600; // 12720
 const STAIRCASE_START_X = UTSPRING_END_X - UTSPRING_RUN_LENGTH; // 11370 -- the handover line
+const CHECKPOINT_AT_STAIRCASE_TOP_X = STAIRCASE_START_X - 1; // 11369 -- see the note above
 const STAIRCASE_ASCENT_X = STAIRCASE_START_X - STAIR_ASCENT_STEPS * PLATFORM.width; // 10930
 
 const PLATFORM_C_X = STAIRCASE_ASCENT_X - 1500; // 9430 -- last ordinary jump before the climb
@@ -130,11 +156,16 @@ const PLATFORM_I_X = PLATFORM_H_X + 900; // 34260 -- clustered with H
 const PLATFORM_J_X = PLATFORM_I_X + 4000; // 38260 -- quiet stretch
 const PLATFORM_K_X = PLATFORM_J_X + 4500; // 42760 -- quiet stretch
 // The two encounters this stretch previously had none of: the admin
-// enemy belongs to the Clinic section and the exchange enemy to USA
+// enemy belongs to the Clinic section and the football helmet to USA
 // (task 6.8). Both sit in the quiet gaps between existing platforms, so
 // nothing moved to make room for them.
 const CLINIC_INBOX_X = 36200; // between platforms I and J
-const USA_EXCHANGE_PLATFORM_X = 40800; // between the USA boundary and platform K
+// The football helmet needs open ground to charge, not a small elevated
+// platform, so it stands directly on the ground -- fitting for the "usa
+// stadium" section's open field look (config.js BACKGROUNDS). It sits with
+// generous room either side of it within the section (SECTION_USA_X to
+// SECTION_GU_X below) for its ENEMY_HELMET.chargeRange.
+const USA_HELMET_X = 40800; // between the USA boundary and platform K
 const PLATFORM_L_X = PLATFORM_K_X + 1200; // 43960 -- clustered with K
 const GRADUATION_COMIC_X = PLATFORM_L_X + 1400; // 45360
 const GRADUATION_ACTIVATION_X = GOLEM_EXIT_X + 13500; // 45860 = GOLEM_EXIT_X + 13,500 ✓
@@ -152,8 +183,8 @@ const FINAL_COMIC_X = GRADUATION_X + GRADUATION.width + 300; // 46900
 // level between them. Pacing wins over chronology. Do not "fix" it.
 //
 // This also means the roster in AGENTS.md §3 -- which lists the Endless
-// Inbox and exchange enemies under Göteborg, before boss 1 -- no longer
-// matches where they stand. The section order here supersedes it.
+// Inbox and exchange-semester enemies under Göteborg, before boss 1 -- no
+// longer matches where they stand. The section order here supersedes it.
 //
 // Boundaries are measured off the landmarks that already exist, so moving
 // the staircase or an arena carries its section with it. Each is one line.
@@ -186,6 +217,17 @@ const UF_STAND_X = 1800;
 const POLHEM_MECH_X = 6200;
 const STADIUM_X = 41400;
 
+// How far the ground is filled either side of the level proper. This is
+// layout, not rendering trivia: it is "where the level's floor starts and
+// stops", and it was two bare constants in game.js (-5000 and a flat
+// 60000) that had to be re-checked by hand every time the level's length
+// changed. Derived from the level's own end instead, so it follows.
+const RENDER_MARGIN = 5000; // px
+export const LEVEL_BOUNDS = {
+  renderLeft: -RENDER_MARGIN,
+  renderRight: LEVEL_END_X + RENDER_MARGIN, // 52,400
+};
+
 export const LEVEL = [
   // Sections are level data: an x-range plus which background to wear.
   // The look itself (layers, parallax, colours) is a tunable and lives in
@@ -209,33 +251,46 @@ export const LEVEL = [
 
   { type: 'player-spawn', x: SPAWN_X },
 
-  // Lund trash: one behaviour (identical createTrashEnemy/updateEnemy/
-  // damageEnemy for all three), placed three ways so each plays
-  // differently (task 3.6):
-  //   ground  plain -- walk into it for contact damage, or shoot it from
-  //           the ground, or jump over it. The baseline encounter.
-  { type: 'enemy-trash', x: TRASH_GROUND_X },
-  //   jump    ground level like the first, clustered close behind it --
-  //           not enough room to safely shoot it down in passing, so
-  //           clearing it means actually jumping it, not just plinking it.
-  { type: 'enemy-trash', x: TRASH_JUMP_X },
+  //   1  alone. Flat ground, nothing else on screen, no platform or gap
+  //      until it's dealt with. Standing still and taking a hit costs some
+  //      health and nothing else; walking backwards avoids it entirely.
+  { type: 'enemy-mathbook', x: MATHBOOK_1_X },
 
-  // Pure traversal platforms (task C: "force a jump"), breaking up the
-  // long run to the staircase. Neither carries anything -- forcing the
-  // jump is the whole job.
+  // Audit finding A2: the tutorial encounter is cleared, so a death from
+  // here on no longer walks all the way back to SPAWN_X.
+  { type: 'checkpoint', x: CHECKPOINT_AFTER_MATHBOOK_1_X },
+
+  // Pure traversal platforms (task C: "force a jump"), breaking up the run
+  // to the ledge. Neither carries anything -- forcing the jump is the
+  // whole job.
   { type: 'platform', x: PLATFORM_A_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_B_X, y: platformTop(CLEARANCE_HIGH) },
 
-  //   ledge   now a real platform (task C), not just a floating position --
-  //           contact-safe from the ground, only killable with a jump-timed
-  //           shot or by climbing up (same height logic verified for the
-  //           claim phase, task 2.5). Optional: skip it, or take the skill
-  //           shot.
-  { type: 'platform', x: TRASH_LEDGE_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
+  //   2  ledge. Contact-safe from the ground -- only killable with a
+  //      jump-timed shot or by climbing up (same height logic verified for
+  //      the claim phase, task 2.5). Optional: skip it, or take the skill
+  //      shot.
+  { type: 'platform', x: MATHBOOK_2_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
   {
-    type: 'enemy-trash',
-    x: TRASH_LEDGE_PLATFORM_X + (PLATFORM.width - ENEMY_TRASH.width) / 2,
-    y: platformTop(CLEARANCE_LOW) - ENEMY_TRASH.height,
+    type: 'enemy-mathbook',
+    x: MATHBOOK_2_PLATFORM_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
+    y: platformTop(CLEARANCE_LOW) - ENEMY_MATHBOOK.height,
+  },
+
+  // Audit finding A2: short of the gap jump, so a missed jump or a death
+  // to the book on the far side never replays the ledge encounter too.
+  { type: 'checkpoint', x: CHECKPOINT_BEFORE_GAP_X },
+
+  //   3  behind a real gap between two platforms: a launch platform, then
+  //      MATHBOOK_3_GAP_WIDTH of open air, then the book's platform.
+  //      Reachable by jumping the gap while its slow shot may already be
+  //      in flight, or skippable at ground level like the ledge.
+  { type: 'platform', x: GAP_APPROACH_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
+  { type: 'platform', x: MATHBOOK_3_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
+  {
+    type: 'enemy-mathbook',
+    x: MATHBOOK_3_PLATFORM_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
+    y: platformTop(CLEARANCE_LOW) - ENEMY_MATHBOOK.height,
   },
 
   { type: 'platform', x: PLATFORM_C_X, y: platformTop(CLEARANCE_LOW) },
@@ -262,6 +317,13 @@ export const LEVEL = [
   // level ground, never touching the thing it is named after. Someone who
   // did climb the approach platforms is already at exactly this height,
   // so for them it changes nothing.
+  // Audit finding A2: one pixel short of the trigger line, so a death
+  // during the ascent climb resumes right at the top of it rather than
+  // back at PLATFORM_C_X -- and since the ground here is open (no wall,
+  // see the comment above), a respawn one step from the trigger simply
+  // walks straight into the utspring on the very next step.
+  { type: 'checkpoint', x: CHECKPOINT_AT_STAIRCASE_TOP_X },
+
   { type: 'utspring-trigger', x: STAIRCASE_START_X, y: STAIR_TOP_Y },
 
   // The checkpoint sits at the END of the sequence, after control
@@ -275,9 +337,9 @@ export const LEVEL = [
   { type: 'platform', x: PLATFORM_D_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_E_X, y: platformTop(CLEARANCE_HIGH) },
 
-  // The Endless Inbox and the exchange enemy used to stand here. Task
+  // The Endless Inbox and the football helmet used to stand here. Task
   // 6.8's section order puts the admin enemy in the Clinic and the
-  // exchange enemy in USA, both of which come AFTER the Research Golem,
+  // football helmet in USA, both of which come AFTER the Research Golem,
   // so both moved down this file. See the note on the section table.
 
   { type: 'platform', x: PLATFORM_F_X, y: platformTop(CLEARANCE_LOW) },
@@ -309,15 +371,11 @@ export const LEVEL = [
   { type: 'enemy-inbox', x: CLINIC_INBOX_X },
   { type: 'platform', x: PLATFORM_J_X, y: platformTop(CLEARANCE_HIGH) },
 
-  //   exchange  carried on a platform (task C) -- same patrol logic, just
-  //             elevated, so it reads as a different encounter from
-  //             ground level despite being identical code.
-  { type: 'platform', x: USA_EXCHANGE_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
-  {
-    type: 'enemy-exchange',
-    x: USA_EXCHANGE_PLATFORM_X + (PLATFORM.width - ENEMY_EXCHANGE.width) / 2,
-    y: platformTop(CLEARANCE_LOW) - ENEMY_EXCHANGE.height,
-  },
+  // The football helmet (USA, exchange semester): idle, telegraph, charge,
+  // recover -- "dodge, then punish". Flat open ground, no platform: its
+  // ENEMY_HELMET.minX/maxX (centred on this x) already bound the charge to
+  // this stretch on their own.
+  { type: 'enemy-helmet', x: USA_HELMET_X },
 
   { type: 'platform', x: PLATFORM_K_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_L_X, y: platformTop(CLEARANCE_HIGH) },
@@ -340,9 +398,9 @@ export const LEVEL = [
 // Height of each spawnable type, used to stand it on the ground by default.
 const ENTITY_HEIGHT = {
   'player-spawn': PLAYER.height,
-  'enemy-trash': ENEMY_TRASH.height,
+  'enemy-mathbook': ENEMY_MATHBOOK.height,
   'enemy-inbox': ENEMY_INBOX.height,
-  'enemy-exchange': ENEMY_EXCHANGE.height,
+  'enemy-helmet': ENEMY_HELMET.height,
   'boss-research-golem': RESEARCH_GOLEM.height,
   'boss-graduation': GRADUATION.height,
   checkpoint: PLAYER.height,

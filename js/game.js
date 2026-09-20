@@ -1,9 +1,9 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
-import { createTrashEnemy, createInboxEnemy, createExchangeEnemy, updateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
+import { createMathbookEnemy, createInboxEnemy, createFootballHelmetEnemy, updateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
 import {
   createResearchGolem,
   updateResearchGolem,
@@ -19,7 +19,7 @@ import {
   drawGraduationBoss,
   drawGraduationBossHpBar,
 } from './bosses.js';
-import { LEVEL, entryY } from './level.js';
+import { LEVEL, LEVEL_BOUNDS, entryY } from './level.js';
 
 const FIXED_DT = 1 / TIMESTEP.hz;
 
@@ -58,6 +58,27 @@ function setTitleCard(visible, opacity) {
   if (titleCardListener) titleCardListener(visible, opacity);
 }
 
+// The focus/visibility hint (task 3.10) is UI copy, so it is DOM and not
+// canvas (AGENTS.md §5). Same one-listener shape as the title card above:
+// game.js owns when it shows, ui.js owns the element.
+let resumeHintListener = null;
+export function subscribeToResumeHint(listener) {
+  resumeHintListener = listener;
+}
+
+// Called every frame, so it has to be idempotent: only a change is passed
+// on. Visibility is recomputed rather than latched, because the window can
+// already be unfocused when the game moves between states -- an earlier
+// version latched it once on the way into the frozen branch and, when the
+// window happened to be unfocused on the title screen, never showed the
+// hint again for the rest of the session.
+let resumeHintVisible = false;
+function setResumeHint(visible) {
+  if (visible === resumeHintVisible) return;
+  resumeHintVisible = visible;
+  if (resumeHintListener) resumeHintListener(visible);
+}
+
 let ctx;
 let player;
 let camera;
@@ -87,6 +108,21 @@ let arenaWallX = null;
 let arenaLockCameraX = null;
 let lockedBoss = null;
 let spawnPoint;
+// Hitstop (config.js HITSTOP): while this is running the fixed step does
+// nothing at all -- no movement, no timers, no attacks. One counter, not
+// a scheduler: a second hit during a freeze extends it to whichever
+// request is longer rather than queueing behind it.
+let hitstopTimer = 0;
+// Screen shake (config.js SHAKE). Two numbers, not a list of sources:
+// a louder shake overrides a quieter one already running rather than
+// adding to it, so nothing can compound its way past maxAmplitude.
+let shakeTimer = 0;
+let shakeAmplitude = 0;
+// Previous boss phase/stage, compared each step. A phase change is worth
+// a shake, and watching for the change here is what keeps bosses.js from
+// having to know that presentation exists.
+let lastBossPhase = null;
+let lastGraduationStage = null;
 let wasPlayerDead = false;
 let accumulator = 0;
 let lastTime = 0;
@@ -304,9 +340,85 @@ function updateConfetti(dt) {
   confetti = confetti.filter((piece) => piece.y < cullBelow);
 }
 
+// --- Death bursts -----------------------------------------------------
+//
+// Deliberately the same shape as the confetti above, and for the same
+// reason (AGENTS.md §7.10): a plain list of rectangles with their own
+// timers, not a particle system. Each burst is one fading ghost of the
+// body plus a handful of shards. They live in world space and are drawn
+// with everything else inside the camera transform.
+let deathBursts = [];
+
+function spawnDeathBurst(entity, scale) {
+  const centerX = entity.x + entity.width / 2;
+  const centerY = entity.y + entity.height / 2;
+  const shards = [];
+  const count = Math.round(DEATH_BURST.particleCount * scale);
+  for (let i = 0; i < count; i++) {
+    // Fanned evenly around the circle, then jittered, so the burst reads
+    // as a burst rather than as a spray in one direction.
+    const angle = (i / count) * Math.PI * 2 + Math.random() * DEATH_BURST.particleAngleJitter;
+    const speed = DEATH_BURST.particleSpeed * scale * (1 - DEATH_BURST.particleSpread * Math.random());
+    shards.push({ x: centerX, y: centerY, vx: Math.cos(angle) * speed, vy: Math.sin(angle) * speed });
+  }
+  deathBursts.push({
+    x: entity.x,
+    y: entity.y,
+    width: entity.width,
+    height: entity.height,
+    ghostTimer: DEATH_BURST.ghostDuration,
+    shardTimer: DEATH_BURST.particleDuration,
+    shards,
+  });
+}
+
+function updateDeathBursts(dt) {
+  if (deathBursts.length === 0) return;
+  for (const burst of deathBursts) {
+    burst.ghostTimer -= dt;
+    burst.shardTimer -= dt;
+    for (const shard of burst.shards) {
+      shard.vy += DEATH_BURST.particleGravity * dt;
+      shard.x += shard.vx * dt;
+      shard.y += shard.vy * dt;
+    }
+  }
+  deathBursts = deathBursts.filter((burst) => burst.ghostTimer > 0 || burst.shardTimer > 0);
+}
+
+function drawDeathBursts(ctx) {
+  for (const burst of deathBursts) {
+    ctx.fillStyle = DEATH_BURST.color;
+
+    if (burst.ghostTimer > 0) {
+      const life = burst.ghostTimer / DEATH_BURST.ghostDuration; // 1 at death, 0 at the end
+      const scale = 1 + (DEATH_BURST.ghostScale - 1) * (1 - life);
+      const width = burst.width * scale;
+      const height = burst.height * scale;
+      ctx.globalAlpha = life;
+      ctx.fillRect(
+        Math.round(burst.x + burst.width / 2 - width / 2),
+        Math.round(burst.y + burst.height / 2 - height / 2),
+        width,
+        height
+      );
+    }
+
+    if (burst.shardTimer > 0) {
+      const life = burst.shardTimer / DEATH_BURST.particleDuration;
+      const size = DEATH_BURST.particleSize * life; // shrink away rather than blink out
+      ctx.globalAlpha = life;
+      for (const shard of burst.shards) {
+        ctx.fillRect(Math.round(shard.x - size / 2), Math.round(shard.y - size / 2), size, size);
+      }
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
 // Level-data-driven comic beats (story beats 5, 7 and 9 in AGENTS.md §3):
-// once the player's x crosses a comic-trigger entry, pause gameplay into
-// the comic placeholder. `next` is 'playing' to resume the fight ahead, or
+// once the player's x crosses a comic-trigger entry, gameplay pauses into
+// the comic viewer. `next` is 'playing' to resume the fight ahead, or
 // 'application' for the final comic, which ends the game there -- no
 // Paradox fight (AGENTS.md §3).
 function checkComicTriggers() {
@@ -327,6 +439,11 @@ function loadLevel() {
   pickups = [];
   platforms = [];
   utspringTrigger = null;
+  deathBursts = [];
+  shakeTimer = 0;
+  shakeAmplitude = 0;
+  lastBossPhase = null;
+  lastGraduationStage = null;
   const checkpointXs = [];
   const sections = [];
   const triggers = [];
@@ -339,12 +456,12 @@ function loadLevel() {
     const y = entryY(entry);
     if (entry.type === 'player-spawn') {
       spawnPoint = { x: entry.x, y };
-    } else if (entry.type === 'enemy-trash') {
-      enemies.push(createTrashEnemy(entry.x, y));
+    } else if (entry.type === 'enemy-mathbook') {
+      enemies.push(createMathbookEnemy(entry.x, y));
     } else if (entry.type === 'enemy-inbox') {
       enemies.push(createInboxEnemy(entry.x, y));
-    } else if (entry.type === 'enemy-exchange') {
-      enemies.push(createExchangeEnemy(entry.x, y));
+    } else if (entry.type === 'enemy-helmet') {
+      enemies.push(createFootballHelmetEnemy(entry.x, y));
     } else if (entry.type === 'boss-research-golem') {
       boss = createResearchGolem(entry.x, y, entry.activationX);
     } else if (entry.type === 'boss-graduation') {
@@ -391,13 +508,16 @@ function isUnfocused() {
 
 function loop(now) {
   const unfocused = isUnfocused();
+  // Only during gameplay: the title and comic screens are DOM screens
+  // stacked over the canvas and have no simulation to freeze, so there is
+  // nothing there for a "click to resume" to be about.
+  setResumeHint(unfocused && gameState === STATE.PLAYING);
   if (unfocused) {
     // Frozen: no stepping, no accumulating. requestAnimationFrame keeps
     // getting scheduled below so the loop is instantly ready the moment
     // focus returns -- nothing to "wake up".
     wasUnfocused = true;
     render();
-    drawUnfocusedHint();
     clearFrameInput();
     requestAnimationFrame(loop);
     return;
@@ -418,9 +538,9 @@ function loop(now) {
   if (delta > TIMESTEP.maxFrameDelta) delta = TIMESTEP.maxFrameDelta;
 
   // Only PLAYING has a simulation to step. TITLE, COMIC and APPLICATION
-  // are DOM/placeholder screens with no fixed-timestep work of their own
-  // -- their own input (clicks, Space) is handled by ui.js/comics.js
-  // directly, not read from here.
+  // are DOM screens with no fixed-timestep work of their own -- their own
+  // input (clicks, Space) is handled by ui.js/comics.js directly, not
+  // read from here.
   if (gameState === STATE.PLAYING) {
     accumulator += delta;
     while (accumulator >= FIXED_DT && gameState === STATE.PLAYING) {
@@ -444,6 +564,14 @@ function loop(now) {
 }
 
 function step(dt) {
+  // Hitstop consumes whole simulation steps. Nothing below runs, so the
+  // frame the shot landed on is what stays on screen for the freeze --
+  // including the enemy's hit flash.
+  if (hitstopTimer > 0) {
+    hitstopTimer -= dt;
+    return;
+  }
+
   // Before the player updates: the sequence owns their movement while it
   // is running, so it has to set autoRun for this step first.
   updateUtspring(dt);
@@ -453,17 +581,25 @@ function step(dt) {
   applySolidWalls();
   applyArenaWall();
   updateProjectiles(dt);
-  for (const enemy of enemies) updateEnemy(enemy, dt);
+  for (const enemy of enemies) {
+    const enemySpawned = updateEnemy(enemy, dt, player);
+    if (enemySpawned.length > 0) projectiles.push(...enemySpawned);
+  }
   const bossSpawned = updateResearchGolem(boss, dt);
   if (bossSpawned.length > 0) projectiles.push(...bossSpawned);
   const graduationSpawned = updateGraduationBoss(graduationBoss, dt);
   if (graduationSpawned.length > 0) projectiles.push(...graduationSpawned);
+  const hpBeforeHits = player.hp;
   resolveProjectileHits();
   resolveEnemyContact();
+  if (player.hp < hpBeforeHits) requestShake(SHAKE.playerDamage);
+  watchBossPhaseChanges();
   resolvePickups();
   advanceCheckpoint();
   handleDeathTransition();
   checkComicTriggers();
+  updateDeathBursts(dt);
+  if (shakeTimer > 0) shakeTimer -= dt;
   advancePacingTimers(dt);
   updateCamera(dt);
 }
@@ -489,14 +625,14 @@ function advanceCheckpoint() {
 }
 
 // Death-during-boss handling (task 2.6): the moment death happens, clear
-// every hostile (boss-owned) projectile so respawning doesn't immediately
-// walk the player back into fire they never had a chance to see. Fast
-// respawn and the boss keeping its HP are already true by construction --
-// respawnPlayer (player.js) never touches boss state, and
+// every hostile projectile (boss- or enemy-owned) so respawning doesn't
+// immediately walk the player back into fire they never had a chance to
+// see. Fast respawn and the boss keeping its HP are already true by
+// construction -- respawnPlayer (player.js) never touches boss state, and
 // PLAYER.respawnDelay is short.
 function handleDeathTransition() {
   if (player.dead && !wasPlayerDead) {
-    projectiles = projectiles.filter((projectile) => projectile.owner !== 'boss');
+    projectiles = projectiles.filter((projectile) => projectile.owner === 'player');
   }
   wasPlayerDead = player.dead;
 }
@@ -561,13 +697,26 @@ function updateProjectiles(dt) {
   const cullLeft = camera.x - PROJECTILE_CULL_MARGIN;
   const cullRight = camera.x + CANVAS.width + PROJECTILE_CULL_MARGIN;
   projectiles = projectiles.filter(
-    (projectile) => projectile.life > 0 && projectile.x + projectile.width > cullLeft && projectile.x < cullRight
+    (projectile) =>
+      projectile.life > 0 &&
+      projectile.x + projectile.width > cullLeft &&
+      projectile.x < cullRight &&
+      // Nothing survives below the floor. The arcing and fanned boss
+      // patterns have no ground interaction, so they used to sink through
+      // the floor line and keep travelling inside it -- a hazard-coloured
+      // object moving around underneath the ground the player stands on.
+      // This cannot change what can hit anyone: the player's feet rest on
+      // groundY, so a projectile whose top is at or below groundY is
+      // entirely beneath them and could never have overlapped.
+      projectile.y < WORLD.groundY
   );
 }
 
 function resolveProjectileHits() {
   for (const projectile of projectiles) {
-    if (projectile.owner === 'boss') {
+    // Hostile: fired by a boss or an enemy (e.g. the maths book). Only the
+    // player owner tag means "vs enemies/bosses" below.
+    if (projectile.owner !== 'player') {
       if (aabbOverlap(projectile, player)) {
         damagePlayer(player, projectile.contactDamage);
         projectile.life = 0;
@@ -579,7 +728,17 @@ function resolveProjectileHits() {
     for (const enemy of enemies) {
       if (!enemy.alive) continue;
       if (aabbOverlap(projectile, enemy)) {
-        if (damageEnemy(enemy, 1)) spawnBark(player, enemy.type); // task 3.9
+        // hp before/after is what separates a shot that did damage from
+        // one that was merely absorbed -- the Endless Inbox can't be shot
+        // down at all, and the football helmet is invulnerable outside
+        // recovery. Neither should feel like a hit landed.
+        const hpBefore = enemy.hp;
+        const killed = damageEnemy(enemy, 1);
+        if (killed) spawnBark(player, enemy.type); // task 3.9
+        if (killed) spawnDeathBurst(enemy, 1);
+        if (killed) requestShake(SHAKE.enemyDeath);
+        if (killed) requestHitstop(HITSTOP.enemyDeath);
+        else if (enemy.hp < hpBefore) requestHitstop(HITSTOP.enemyHit);
         projectile.life = 0;
         break;
       }
@@ -594,25 +753,82 @@ function resolveProjectileHits() {
           projectile.life = 0;
         }
       } else if (aabbOverlap(projectile, boss)) {
+        const hpBefore = boss.hp;
         damageResearchGolem(boss, 1);
+        if (boss.hp < hpBefore) requestHitstop(boss.alive ? HITSTOP.enemyHit : HITSTOP.enemyDeath);
+        if (!boss.alive) spawnDeathBurst(boss, DEATH_BURST.bossScale);
         projectile.life = 0;
       }
     }
     if (projectile.life <= 0) continue;
 
     if (graduationBoss.alive && aabbOverlap(projectile, graduationBoss)) {
+      const hpBefore = graduationBoss.hp;
       damageGraduationBoss(graduationBoss, 1);
+      if (graduationBoss.hp < hpBefore) {
+        requestHitstop(graduationBoss.alive ? HITSTOP.enemyHit : HITSTOP.enemyDeath);
+      }
+      if (!graduationBoss.alive) spawnDeathBurst(graduationBoss, DEATH_BURST.bossScale);
       projectile.life = 0;
     }
   }
   projectiles = projectiles.filter((projectile) => projectile.life > 0);
 }
 
+// A longer freeze already running is never shortened by a later, smaller
+// request -- two shots landing back to back should not cut the first
+// impact short.
+function requestHitstop(seconds) {
+  if (seconds > hitstopTimer) hitstopTimer = seconds;
+}
+
+// A bigger shake replaces a smaller one that is still running; a smaller
+// one never cuts a bigger one short. Requests never add together, so the
+// ceiling in config.js is a real ceiling.
+function requestShake(amplitude) {
+  const capped = Math.min(amplitude, SHAKE.maxAmplitude);
+  if (shakeTimer > 0 && capped < shakeAmplitude) return;
+  shakeAmplitude = capped;
+  shakeTimer = SHAKE.duration;
+}
+
+// The Research Golem's phase ('phaseA' -> 'claim' -> 'phaseB' -> 'dead')
+// and Graduation's stage ('stage1' -> 'stage2' -> 'dead') are both set
+// inside bosses.js. Rather than have the bosses reach out and ask for
+// presentation, game.js simply notices when one changed.
+function watchBossPhaseChanges() {
+  if (boss.active && boss.phase !== lastBossPhase) {
+    if (lastBossPhase !== null) requestShake(SHAKE.bossPhaseChange);
+    lastBossPhase = boss.phase;
+  }
+  if (graduationBoss.active && graduationBoss.stage !== lastGraduationStage) {
+    if (lastGraduationStage !== null) requestShake(SHAKE.bossPhaseChange);
+    lastGraduationStage = graduationBoss.stage;
+  }
+}
+
+// Decays linearly to nothing over SHAKE.duration. Screen space, applied
+// only to the world transform -- see the note in config.js SHAKE.
+function shakeOffset() {
+  if (shakeTimer <= 0) return { x: 0, y: 0 };
+  const remaining = shakeTimer / SHAKE.duration;
+  const amplitude = shakeAmplitude * remaining;
+  const phase = (SHAKE.duration - shakeTimer) * SHAKE.frequency * Math.PI * 2;
+  // Different rates on the two axes, so it reads as a knock rather than
+  // as a diagonal slide.
+  return { x: Math.sin(phase) * amplitude, y: Math.cos(phase * 1.7) * amplitude * 0.6 };
+}
+
 function resolveEnemyContact() {
   for (const enemy of enemies) {
     if (!enemy.alive) continue;
-    if (aabbOverlap(player, enemy)) {
-      damagePlayer(player, contactDamageFor(enemy));
+    // contactDamageFor can return 0 now (the helmet while recovering), and
+    // damagePlayer would otherwise still burn the invulnerability window on
+    // a hit that did nothing -- skip the call entirely rather than let a
+    // real subsequent hit go unfelt because of it.
+    const damage = contactDamageFor(enemy);
+    if (damage > 0 && aabbOverlap(player, enemy)) {
+      damagePlayer(player, damage);
     }
   }
 }
@@ -757,23 +973,32 @@ function drawBackgroundLayers(ctx, backgroundKey, alpha) {
 function drawBackgroundLayer(ctx, layer) {
   const view = visibleWorldRect();
   const shift = camera.x * (1 - layer.parallax);
+  // Overfilled by the screen-shake ceiling (doubled, since the utspring
+  // pull-back means a screen-space pixel can be more than a world pixel).
+  // Without it a shake slides the fills off the edge of the screen and
+  // leaves a bare strip down the side of the frame.
+  const bleed = SHAKE.maxAmplitude * 2;
   // In this translated space, the visible span starts here.
-  const left = view.left - shift;
-  const right = left + view.width;
+  const left = view.left - shift - bleed;
+  const right = left + view.width + bleed * 2;
 
   ctx.save();
   ctx.translate(shift, 0);
   const source = layer.source;
 
+  const fillWidth = right - left;
+  const fillTop = view.top - bleed;
+  const fillHeight = view.height + bleed * 2;
+
   if (source.type === 'color') {
     ctx.fillStyle = source.color;
-    ctx.fillRect(left, view.top, view.width, view.height);
+    ctx.fillRect(left, fillTop, fillWidth, fillHeight);
   } else if (source.type === 'gradient') {
     const gradient = ctx.createLinearGradient(0, 0, 0, WORLD.groundY);
     gradient.addColorStop(0, source.from);
     gradient.addColorStop(1, source.to);
     ctx.fillStyle = gradient;
-    ctx.fillRect(left, view.top, view.width, view.height);
+    ctx.fillRect(left, fillTop, fillWidth, fillHeight);
   } else if (source.type === 'silhouette') {
     drawSilhouette(ctx, source, left, right);
   }
@@ -822,6 +1047,8 @@ function drawLandmarks(ctx) {
     if (drawX + spec.width < view.left || drawX > view.left + view.width) continue;
 
     const top = WORLD.groundY - spec.height;
+    // Held back so scenery reads as scenery (config.js LANDMARK.alpha).
+    ctx.globalAlpha = LANDMARK.alpha;
     ctx.fillStyle = spec.color;
     ctx.fillRect(Math.round(drawX), Math.round(top), spec.width, spec.height);
     ctx.fillStyle = LANDMARK.labelColor;
@@ -829,15 +1056,9 @@ function drawLandmarks(ctx) {
     ctx.textAlign = 'center';
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(spec.label, Math.round(drawX + spec.width / 2), Math.round(top - LANDMARK.labelGap));
+    ctx.globalAlpha = 1;
   }
 }
-
-// Level isn't bounded yet (no end-of-level data), so background fills just
-// need to comfortably cover any reasonable play area. Task D's derived
-// layout runs to just under 47,000; 60,000 leaves comfortable margin.
-const WORLD_RENDER_LEFT = -5000;
-const WORLD_RENDER_RIGHT = 60000;
-const GROUND_COLOR = '#1b2333';
 
 function render() {
   ctx.clearRect(0, 0, CANVAS.width, CANVAS.height);
@@ -850,6 +1071,11 @@ function render() {
   if (gameState === STATE.APPLICATION) return;
 
   ctx.save();
+  // Screen shake, before anything else: a flat screen-space nudge of the
+  // whole world. Applied here and nowhere else, so the HUD drawn after
+  // ctx.restore() never moves and never becomes hard to read.
+  const shake = shakeOffset();
+  ctx.translate(shake.x, shake.y);
   // Zoom centered on the screen, then pan by the camera -- at zoom 1 this
   // is exactly the plain translate(-camera.x, -camera.y) it replaces.
   ctx.translate(CANVAS.width / 2, CANVAS.height / 2);
@@ -859,8 +1085,13 @@ function render() {
   drawBackground(ctx);
   drawLandmarks(ctx);
 
-  ctx.fillStyle = GROUND_COLOR;
-  ctx.fillRect(WORLD_RENDER_LEFT, WORLD.groundY, WORLD_RENDER_RIGHT - WORLD_RENDER_LEFT, CANVAS.height - WORLD.groundY);
+  ctx.fillStyle = WORLD.groundColor;
+  ctx.fillRect(
+    LEVEL_BOUNDS.renderLeft,
+    WORLD.groundY,
+    LEVEL_BOUNDS.renderRight - LEVEL_BOUNDS.renderLeft,
+    WORLD.groundDepth
+  );
 
   drawPlatforms(ctx);
   drawPickups(ctx);
@@ -872,6 +1103,7 @@ function render() {
   drawGraduationBoss(ctx, graduationBoss);
   drawGraduationBossHpBar(ctx, graduationBoss);
   drawProjectiles(ctx);
+  drawDeathBursts(ctx);
   drawConfetti(ctx);
   ctx.restore();
 
@@ -949,9 +1181,15 @@ function drawPlayerHud(ctx) {
 }
 
 function drawPlatforms(ctx) {
-  ctx.fillStyle = PLATFORM.color;
   for (const platform of platforms) {
-    ctx.fillRect(Math.round(platform.x), Math.round(platform.y), platform.width, platform.height);
+    const x = Math.round(platform.x);
+    const y = Math.round(platform.y);
+    ctx.fillStyle = PLATFORM.color;
+    ctx.fillRect(x, y, platform.width, platform.height);
+    // The landable surface, called out explicitly -- see PLATFORM in
+    // config.js for why the body colour alone was not enough.
+    ctx.fillStyle = PLATFORM.topHighlightColor;
+    ctx.fillRect(x, y, platform.width, PLATFORM.topHighlightHeight);
   }
 }
 
@@ -973,25 +1211,34 @@ function drawPickups(ctx) {
   }
 }
 
-const UI_TEXT_COLOR = '#f7f3e3';
-
-// Not a pause menu (PLAN.md task 3.10 forbids one) and not interactive:
-// one line over the frozen frame so a stopped game reads as "waiting for
-// you" instead of "crashed". It disappears by itself the moment focus
-// returns -- there is nothing to dismiss and nothing to click.
-function drawUnfocusedHint() {
-  ctx.fillStyle = 'rgba(13, 17, 23, 0.55)';
-  ctx.fillRect(0, 0, CANVAS.width, CANVAS.height);
-  ctx.fillStyle = UI_TEXT_COLOR;
-  ctx.font = '22px sans-serif';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText('Click to resume', CANVAS.width / 2, CANVAS.height / 2);
-}
-
 function drawProjectiles(ctx) {
   for (const projectile of projectiles) {
+    const x = Math.round(projectile.x);
+    const y = Math.round(projectile.y);
+    if (projectile.owner === 'player') {
+      // A streak trailing the shot, on the side it came from. Player
+      // shots travel at 900 px/s against 150-420 for everything hostile,
+      // so a trail reads instantly as "that one is mine".
+      const trailX = projectile.vx >= 0 ? x - PROJECTILE.trailLength : x + projectile.width;
+      ctx.globalAlpha = PROJECTILE.trailAlpha;
+      ctx.fillStyle = PROJECTILE.color;
+      ctx.fillRect(trailX, y, PROJECTILE.trailLength, projectile.height);
+      ctx.globalAlpha = 1;
+    }
+
     ctx.fillStyle = projectile.color || PROJECTILE.color;
-    ctx.fillRect(Math.round(projectile.x), Math.round(projectile.y), projectile.width, projectile.height);
+    ctx.fillRect(x, y, projectile.width, projectile.height);
+
+    // Both kinds get a rim so they read against a bright background as
+    // well as a dark one, but deliberately different rims: hostile shots
+    // take HAZARD's thick near-black one, the player's a thin cool one.
+    if (projectile.owner === 'player') {
+      ctx.strokeStyle = PROJECTILE.outlineColor;
+      ctx.lineWidth = PROJECTILE.outlineWidth;
+    } else {
+      ctx.strokeStyle = HAZARD.outlineColor;
+      ctx.lineWidth = HAZARD.projectileOutlineWidth;
+    }
+    ctx.strokeRect(x, y, projectile.width, projectile.height);
   }
 }

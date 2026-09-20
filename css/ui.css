@@ -290,6 +290,32 @@
    the staircase, and never takes pointer events: the persistent Skip to
    application and Mute controls stay clickable throughout the sequence.
    --------------------------------------------------------------------- */
+/* Focus/visibility hint (task 3.10). Covers the frozen frame, never the
+   title or comic screens -- game.js only shows it during gameplay.
+   pointer-events off so the click that dismisses it lands on the canvas
+   and gives the page focus back. */
+.resume-hint {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: rgba(13, 17, 23, 0.55);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+}
+
+.resume-hint[hidden] {
+  display: none;
+}
+
+.resume-hint-text {
+  margin: 0;
+  font-size: 1.4rem;
+  color: #f7f3e3;
+}
+
 .studentmossa-card {
   position: absolute;
   left: 50%;
