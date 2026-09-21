@@ -46,11 +46,15 @@ export const WORLD = {
 // section means one entry in each: a range there, a look here.
 //
 // Every look is a stack of exactly three layers, far to near, each with
-// its own parallax factor and its own source. Sources are:
+// its own parallax factors and its own source. Explicit depth names control
+// draw order independently of parallax; background strips stay continuous behind terrain.
+// `parallax` applies to both
+// axes; `parallaxX`/`parallaxY` override either axis independently.
 //
 //   { type: 'color',      color }             flat field
 //   { type: 'gradient',   from, to }          vertical, sky-top to ground
 //   { type: 'silhouette', color, tileWidth, heights }
+//   { type: 'image', path, tileWidth, baselineY, color }
 //
 // A silhouette is one strip of bars standing on the ground line, repeated
 // across the whole section -- `heights` are pixel heights spread evenly
@@ -59,8 +63,8 @@ export const WORLD = {
 // section of any length costs the same.
 //
 // These are placeholders, deliberately flat and obvious. When the real
-// artwork arrives it drops in as data -- a fourth source type taking an
-// image path, with the tiling and parallax already handled.
+// artwork arrives it drops in as image source data, with the tiling,
+// vertical placement and parallax already handled.
 export const BACKGROUND = {
   // px, centred on each boundary: the band over which the outgoing
   // section fades into the incoming one. A hard cut mid-run is jarring.
@@ -74,54 +78,77 @@ const MID = 0.35;
 const NEAR = 0.6;
 
 export const BACKGROUNDS = {
-  // 1 -- Lund, the town. Dark base, pale line-art skyline (AGENTS.md §3).
+  // 1 -- Lund, the town. The sky remains an opaque full-view base for
+  // section crossfades; the approved strips are authored full-colour PNGs.
   'lund-town': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#161d2b' } },
-      { parallax: MID, source: { type: 'gradient', from: '#161d2b', to: '#243247' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#2e3d55', tileWidth: 420, heights: [80, 130, 60, 150, 95, 70, 120, 55] } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/lund-town-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 887, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/lund-town-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 781, colorMode: 'full-color' } },
     ],
   },
 
-  // 2 -- Polhem, the school. Warmer brick, and the roofline goes blocky:
-  // fewer, wider, flatter shapes than the town's.
+  // 2 -- Polhem, the school. It shares Lund's far strip and swaps in the
+  // approved school-specific mid strip.
   'polhem-school': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#2a2029' } },
-      { parallax: MID, source: { type: 'gradient', from: '#2a2029', to: '#4a3230' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#5a3b33', tileWidth: 400, heights: [0, 170, 170, 170, 0, 140, 140, 0] } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/lund-town-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 887, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/polhem-school-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 733, colorMode: 'full-color' } },
     ],
   },
 
-  // 3 -- Lund again, for the utspring. Same skyline family as 1 on
-  // purpose -- you are back where you started -- but lit brighter: this
-  // is the celebration.
+  // 3 -- Utspring: approved school artwork only here; other areas stay unchanged.
   'lund-utspring': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#24304a' } },
-      { parallax: MID, source: { type: 'gradient', from: '#24304a', to: '#3a4a6b' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#54678c', tileWidth: 420, heights: [80, 130, 60, 150, 95, 70, 120, 55] } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/lund-town-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 887, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/polhem-staircase-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 786, colorMode: 'full-color' } },
     ],
   },
 
-  // 4 -- Göteborg. Cooler, and denser: more bars, narrower, taller.
+  // 4 -- Göteborg. Approved far/mid strips (BACKGROUND-ASSET-SPEC.md); no
+  // near layer -- the placeholder silhouette read as stray flat rectangles
+  // against the new full-colour art and was removed rather than kept as a
+  // mismatched filler.
   'goteborg-city': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#131c2e' } },
-      { parallax: MID, source: { type: 'gradient', from: '#131c2e', to: '#22314d' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#31435f', tileWidth: 300, heights: [110, 180, 90, 200, 140, 170, 100, 160, 130, 190] } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 734, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 741, colorMode: 'full-color' } },
     ],
   },
 
   // 5 -- Handels, the Research Golem arena. An interior, so the far layer
   // is a flat wall and NOT a sky gradient -- that alone reads as "indoors"
-  // after four outdoor sections. Gold columns near. You have arrived
-  // somewhere, not walked into more corridor.
+  // after four outdoor sections.
+  //
+  // This flat colour is only ever a fallback now: the actual enclosed hall
+  // (chandeliers, twin staircases, bookshelves, a globe at its centre) is
+  // the boss-specific `research-golem-arena` landmark below, placed once as
+  // a single non-tiled image (level.js) rather than a repeating strip --
+  // AGENTS.md §6, BACKGROUND-ASSET-SPEC.md's scope exception. This colour
+  // is sampled from that art's own shaded stonework, so any sliver not
+  // covered by the landmark (its transparent top margin, or the moment
+  // before it has scrolled into view) still reads as the same room instead
+  // of a mismatched placeholder tone.
   'handels-interior': {
     layers: [
-      { parallax: FAR, source: { type: 'color', color: '#101a30' } },
-      { parallax: MID, source: { type: 'gradient', from: '#16233d', to: '#1d2b49' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#a98b4a', tileWidth: 360, heights: [0, 240, 0, 240, 0, 240] } },
+      { parallax: FAR, source: { type: 'color', color: '#2a2733' } },
+    ],
+  },
+
+  // 5b -- Haga, the short post-Research-Golem Göteborg exterior (NEW LEVEL
+  // FLOW). Reuses the approved Göteborg far strip -- it is still Göteborg,
+  // just a different street -- with the approved `goteborg-haga-mid.png`
+  // strip (BACKGROUND-ASSET-SPEC.md). Its decorative "HAGA" banners are an
+  // explicit, approved exception to the no-text-in-strips rule -- see that
+  // spec's Haga entry.
+  'goteborg-haga': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#131c2e' } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 734, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-haga-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 676, colorMode: 'full-color' } },
     ],
   },
 
@@ -147,7 +174,10 @@ export const BACKGROUNDS = {
   },
 
   // 8 -- GU, the Graduation arena. Dark ceremonial blue, sparse tall
-  // columns. The other arena, and it should read as one.
+  // columns. The other arena, and it should read as one -- also
+  // boss-specific world-space scenery going forward (AGENTS.md §6,
+  // BACKGROUND-ASSET-SPEC.md), not a reusable parallax section; the
+  // placeholder look below stands in until that dedicated arena art exists.
   'gu-ceremony': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#0e1730' } },
@@ -160,14 +190,10 @@ export const BACKGROUNDS = {
 // Landmarks: one-off background objects placed at a single x rather than
 // tiled, each scrolling at its own parallax rate (set per placement in
 // level.js, since how far away a thing reads is a layout decision).
-// Labelled placeholder rectangles until the art pass.
+// Types without a path keep their labelled placeholder until their art pass.
 export const LANDMARK = {
-  // Landmarks are scenery: nothing collides with them and nothing about
-  // them can hurt anyone. Drawn at full opacity they did not read that
-  // way -- the UF stand is a solid gold slab standing on the ground line
-  // in the same plane as the player, and the Polhem mech looked more like
-  // a platform than the actual platforms did. Held back to this, they
-  // settle into the backdrop where they belong.
+  // Placeholder landmarks stay subdued so their solid rectangles read as
+  // scenery. Approved image types can override this at full authored opacity.
   alpha: 0.5,
   labelFont: '13px sans-serif',
   labelColor: '#f7f3e3',
@@ -175,10 +201,71 @@ export const LANDMARK = {
   types: {
     // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
     // background". Never abbreviated on first appearance.
-    'uf-stand': { label: 'UF (Junior Achievement Sweden) STAND', width: 200, height: 130, color: '#c9a227' },
+    'uf-stand': { path: 'assets/backgrounds/uf-stand.webp', colorMode: 'full-color', width: 260, height: 173, baselineY: 332, alpha: 1 },
     // AGENTS.md §3: "the Polhem mech sleeping on the skyline".
-    'polhem-mech': { label: 'POLHEM MECH (asleep)', width: 460, height: 340, color: '#46506b' },
+    'polhem-mech': { path: 'assets/backgrounds/polhem-mech.webp', colorMode: 'full-color', width: 420, height: 420, baselineY: 831, alpha: 1 },
     stadium: { label: 'STADIUM', width: 900, height: 260, color: '#2f4a63' },
+
+    // Boss-specific world-space environment scenery (AGENTS.md §6,
+    // BACKGROUND-ASSET-SPEC.md's scope exception): one-off placed images,
+    // not reusable strips, drawn at their native pixel size (width/height
+    // match the delivered webp exactly, so baselineY needs no rescale --
+    // drawLandmarks' footOffset = baselineY * height / image.height = 1).
+    // Placed at ground level (parallax: 1 in level.js) like every other
+    // landmark here -- they simply happen to be much wider.
+    //
+    // v2 art (repair task): both assets paint their own doors directly
+    // into the artwork, so no separate door prop is drawn on top.
+    // Visibility among these is no longer z-order masking -- game.js's
+    // drawLandmarks explicitly skips the façade while the player is inside
+    // the Research Golem venue and skips the arena while they are outside
+    // it (researchGolemInterior()), so they can never both be on screen
+    // regardless of where their bounding boxes fall.
+    //
+    // Door-role repair task: the façade source has two doors -- a LARGE
+    // DOUBLE DOOR (local x ~585 on the shared source) that is the actual
+    // pre-boss entrance, and a SMALL SIDE DOOR (local x 1793) that is the
+    // post-boss exit, never the entrance. The single full façade image used
+    // to be placed twice and wrongly aligned both placements on the small
+    // door. It is now two fixed crops of the same unedited source
+    // (art-source/backgrounds/boss-arena-facad-v2.png, preserved unchanged;
+    // scripts/runtime-assets.py FACADE_CROPS documents the exact boxes),
+    // chosen from the actual in-game camera framing (config.js
+    // BOSS_APPROACH, level.js RESEARCH_GOLEM_REVEAL_CAMERA_X) rather than
+    // proportional guesses -- each crop only needs to cover what its own
+    // moment ever shows on screen:
+    //
+    // research-golem-facade-entrance: source crop x[0, 1100], the whole
+    // pre-boss approach/reveal/walk ever shows up to local x~980 (the
+    // reveal camera's right edge sits BOSS_APPROACH.revealDoorMarginRight
+    // before the door, and the camera holds there through the walk --
+    // level.js RESEARCH_GOLEM_REVEAL_CAMERA_X). Contains the large double
+    // door at local x 585.
+    'research-golem-facade-entrance': { path: 'assets/backgrounds/research-golem-facade-entrance.webp', colorMode: 'full-color', width: 1100, height: 774, baselineY: 748, alpha: 1 },
+    // research-golem-facade-exit: source crop x[1050, 2033] (the source's
+    // own right edge), covering the small side door (source-local 1793,
+    // crop-local 743) plus the room either side of it a normal
+    // deadzone-follow camera shows the instant the player reappears there
+    // after the boss (level.js FACADE_EXIT_X == SECTION_HAGA_X). Never
+    // needs the main entrance or the far side of the building.
+    'research-golem-facade-exit': { path: 'assets/backgrounds/research-golem-facade-exit.webp', colorMode: 'full-color', width: 983, height: 774, baselineY: 748, alpha: 1 },
+    // research-golem-arena: the single enclosed interior hall for the whole
+    // Research Golem encounter -- small entrance door, centre stage (globe
+    // pedestal, where the boss stands), and small exit door, all in one
+    // image (level.js positions BOSS_X/SUIT_X/GOLEM_EXIT_X against it).
+    // Left door local x 165, centre (pedestal) 1086, right door 1980, of
+    // 2172.
+    //
+    // Ground-alignment repair task: baselineY is a hand-measured row on the
+    // source image, not derived from its alpha channel, and both this and
+    // the façade entries above were measured a few pixels short of the art's
+    // own visible floor line -- alpha content here actually runs solid
+    // through row ~631 before the antialiased edge fades out, ~13px past
+    // the old baselineY: 645, which floated the floor that far above
+    // WORLD.groundY. Re-measured against the delivered webp itself (a
+    // per-row alpha-solidity scan, not the padding trim baselineY already
+    // exists to describe) rather than adjusted by feel.
+    'research-golem-arena': { path: 'assets/backgrounds/research-golem-arena.webp', colorMode: 'full-color', width: 2172, height: 724, baselineY: 632, alpha: 1 },
   },
 };
 
@@ -444,6 +531,73 @@ export const CAMERA = {
   zoomSmoothing: 3, // higher = zoom transitions catch up faster
 };
 
+// Comic input lockout (task 3, playtest round 2). A comic can open while
+// the player is mid-input -- most concretely, holding or clicking left
+// mouse to fire (task A) right as a boss-room comic-trigger fires. The
+// very next mouseup/click then lands on the newly-shown comic screen
+// instead of the canvas and skips panel 1 before it was ever read. Every
+// comic ignores clicks/Space/Enter for this long after it opens, and
+// game.js clears input.js's held/pressed state at the same moment
+// (enterComic) so nothing carried over from before the comic can fire
+// through it either. Applies to every comic, not only the boss ones.
+export const COMIC = {
+  inputLockoutDuration: 0.4, // s
+};
+
+// The boss approach (task 3, playtest round 2): a short scripted walk-up
+// before each boss's comic, replacing the comic simply popping up the
+// instant the player crosses a line. Same pattern as the utspring
+// (STAIRCASE below) -- one hardcoded sequence in game.js, not a cutscene
+// framework, just driven by a table (level.js) because more than one boss
+// needs a version of this beat.
+//
+// The approach trigger sits walkDuration * PLAYER.moveSpeed before the
+// boss's own arena-activation line (level.js), so the scripted walk
+// always arrives exactly on that line as the timer expires -- the same
+// "arrives as the timer runs out" trick STAIRCASE uses below. That means
+// the real fight (bosses.js activation) starts the instant control
+// returns from the comic, with no further walking needed.
+//
+// walkDuration + beatDuration = 1.6 + 0.6 = 2.2s, inside the "two or
+// three seconds" target. This is Graduation's flow, unchanged (its own
+// venue art is future work, PLAN.md 6.8b) -- game.js only runs it when a
+// 'boss-approach' level entry has no revealCameraX.
+export const BOSS_APPROACH = {
+  walkDuration: 1.6, // s, control taken, walking forward at normal speed (not running)
+  beatDuration: 0.6, // s, stopped, a brief beat before the comic opens (Graduation's flow only)
+
+  // Research Golem repair task: a camera-reveal beat inserted BEFORE the
+  // walk, used only when a 'boss-approach' entry carries a revealCameraX
+  // (level.js). The player stops dead; the camera (already able to hold a
+  // fixed lock -- see arenaLockCameraX, reused here rather than building a
+  // second camera system) glides to the authored reveal framing over
+  // revealDuration, holds there for reactDuration while Jakob's reaction
+  // bark shows, then the ordinary walk above carries him the rest of the
+  // way to the door with the camera still locked at that same framing.
+  revealDuration: 1.0, // s, camera eases from wherever it was to the reveal target
+  reactDuration: 0.9, // s, camera holds; this is when the reaction bark shows
+  // How far from the RIGHT edge of the locked reveal frame the venue's
+  // entry door sits, once the camera settles -- the rest of the frame (to
+  // the door's left) is the façade "presenting" itself. Authored, not
+  // derived from where the player happens to stop (task brief: "the
+  // camera should stop based on an authored target/framing... not because
+  // Jakob physically reaches the edge of the screen").
+  revealDoorMarginRight: 400, // px
+};
+
+// Post-boss exit repair task (§9, game.js updateResearchGolemExitWalk): a
+// short, quiet mirror of BOSS_APPROACH.WALK for leaving instead of
+// entering -- control is briefly taken a short distance before the venue's
+// own exit door and Jakob is auto-walked the rest of the way through it, so
+// the exterior/interior render-state flip (RESEARCH_GOLEM_EXIT_X) lands as
+// an authored beat instead of a cut mid-stride. No camera move, no comic,
+// no reaction bark -- "quick and subtle" (task brief) is the whole point,
+// unlike the entrance's reveal.
+export const RESEARCH_GOLEM_EXIT = {
+  triggerMarginBeforeDoor: 150, // px before the exit door where control is taken
+  walkDuration: 0.5, // s of forced forward walk; PLAYER.moveSpeed * this comfortably clears the door
+};
+
 // The utspring — the staircase run and the studentmössa (AGENTS.md §3,
 // PLAN.md task 3.5). A scripted five-second sequence, not a pickup you
 // walk into: approach, handover, descent, confetti, flash, title card,
@@ -573,23 +727,36 @@ export const PLATFORM = {
 // is always leftward -- the level runs one direction and the player
 // always approaches a stationary book from the left, so firing left is
 // always firing back toward wherever the player is coming from.
+// Playtest round 2 (task 1): fired too slowly and died too fast. hp 2 -> 4,
+// idleDuration 6.2 -> 3.4 (full gap between shots, idleDuration +
+// telegraphDuration, goes from 7.1s to 4.3s). idleDuration must stay above
+// projectileLifetime (3s, below) or the "only one shot in flight at once"
+// guarantee that keeps this fair for a player who does nothing breaks.
+//
+// The very first placement (level.js, MATHBOOK_1_X) is the shooting
+// tutorial and must stay exactly as gentle as before -- a player who
+// stands still there for 60s must still be alive. It carries an explicit
+// per-instance override back to the old hp: 2, idleDuration: 6.2, so this
+// tuning applies to the second and third placements only.
 export const ENEMY_MATHBOOK = {
   width: 48,
   height: 48,
   color: '#8a5a3a', // closed cover
   telegraphColor: '#e2b23c', // opens toward this before firing
-  hp: 2, // dies in two hits
+  hp: 4, // was 2
   contactDamage: 1,
   hitFlashDuration: 0.12, // s
 
-  firstShotDelay: 1.4, // s of idle before the very first telegraph
+  firstShotDelay: 1.4, // s of idle before the very first telegraph. Only
+  // matters if an instance is somehow never activated (ACTIVATION above
+  // normally supersedes this by starting the wind-up on activation).
   // s between one shot and the next wind-up starting. Deliberately longer
   // than projectileLifetime below: only one shot is ever in flight at a
   // time (matches "fires A single slow projectile"), so a player who never
   // reacts at all still only ever faces one threat, never several stacked
   // shots closing the gap between hits. This is what makes "a player who
   // does nothing must not die there" actually true rather than just slow.
-  idleDuration: 6.2,
+  idleDuration: 3.4, // was 6.2
   telegraphDuration: 0.9, // s -- AGENTS.md §4's 0.8-1.0s range applies to enemies too
 
   projectileSpeed: 150, // px/s -- slow enough to walk away from without hurrying
@@ -622,13 +789,17 @@ export const ENEMY_INBOX = {
 // the Graduation boss later assumes the player already knows. Invulnerable
 // outside recovery; recovery is the only time it can be hurt, and it deals
 // no contact damage while dazed there.
+// Playtest round 2 (task 1): died too fast -- one or two charge cycles.
+// hp 6 -> 16, aiming for three-to-four full cycles instead. The wind-up
+// itself is unchanged (still 0.8-1.0s, this enemy is meant to be readable);
+// only how much punishment it can absorb during recovery changed.
 export const ENEMY_HELMET = {
   width: 56,
   height: 56,
   color: '#5a7a9a',
   telegraphColor: '#e2b23c', // same wind-up tell colour as every other telegraph
   recoveryColor: '#8a95a8', // dazed -- visibly different so "hit it now" reads at a glance
-  hp: 6, // two-to-three full cycles for a competent player
+  hp: 16, // was 6 -- three-to-four full charge cycles for a competent player
   contactDamage: 1,
   hitFlashDuration: 0.12, // s
 
@@ -665,12 +836,41 @@ export const BARK = {
       '[BARK PLACEHOLDER — CV line 3, maths book kill]',
     ],
     helmet: ['[BARK PLACEHOLDER — CV line, football helmet kill]'],
+    // Not a kill bark: Jakob's reaction during the Research Golem's camera
+    // reveal (BOSS_APPROACH, game.js updateBossApproach). Reuses the same
+    // spawnBark mechanism -- floats above the player, never pauses the
+    // game -- because a one-off reaction line is exactly what that
+    // mechanism already does; it does not need its own system.
+    'research-golem-reveal': ['What is this??'],
   },
 };
 
 export const TELEGRAPH = {
   minDuration: 0.8, // s — AGENTS.md §4, do not go below this
   maxDuration: 1.0, // s
+};
+
+// Proximity activation for ordinary enemies (task 1, playtest round 2).
+// Bosses were already dormant until the player reached an arena's
+// activationX (task B); the maths book and football helmet were not --
+// they ran their idle/telegraph/attack cycle continuously from the moment
+// the level loaded, so by the time a player actually reached one, it was
+// at some essentially arbitrary point in a cycle that could have been
+// running for a minute or more of simulated time. That reads as "several
+// seconds of nothing" exactly as often as it reads as "instant attack" --
+// both are the same bug, an activation moment the enemy doesn't know
+// about. The fix, applied uniformly here, at every boss's activation
+// point (bosses.js) and at every affected enemy's (enemies.js): a dormant
+// enemy does nothing at all until the player is this close, and the
+// instant it wakes it begins its wind-up immediately rather than a full
+// idle/cooldown -- so the delay to the first attack is always roughly one
+// telegraph duration, never a cycle length.
+//
+// Sized to roughly half the canvas width, so activation lands close to
+// when the enemy is scrolling into view rather than either well before or
+// well after.
+export const ACTIVATION = {
+  enemyLeadDistance: 640, // px, player.x before the enemy's own x
 };
 
 // Boss 1 — the Research Golem (AGENTS.md §4). Its world position is level
@@ -703,13 +903,17 @@ export const RESEARCH_GOLEM = {
   // fight.
   claimThresholds: [0.66, 0.33],
 
+  // Playtest round 2 (task 1): the cooldown between attacks ran too long
+  // throughout the fight. Shortened both phases for continuous pressure;
+  // every pattern's own telegraphDuration (below, unchanged) still gives
+  // the same 0.8-1.0s tell either way.
   phaseA: {
     cyclePatterns: ['ground-shot', 'high-arc'],
-    cycleInterval: 2.2, // s between attack starts — deliberately slow (tutorial)
+    cycleInterval: 1.6, // s between attack starts — was 2.2, still the slower tutorial phase
   },
   phaseB: {
     cyclePatterns: ['ground-shot', 'high-arc', 'spread-burst'],
-    cycleInterval: 1.3, // s between attack starts — faster
+    cycleInterval: 0.9, // s between attack starts — was 1.3
   },
 
   // Attack patterns as data: telegraph duration, projectile speed/angle,

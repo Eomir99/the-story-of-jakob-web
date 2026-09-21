@@ -52,17 +52,19 @@
       </div>
 
       <!--
-        Real DOM comic viewer (PLAN.md task 4.3), replacing game.js's
-        placeholder. One panel on screen at a time -- comics.js swaps
-        #comic-panel-image's src and rebuilds the bubble layer on every
-        advance; content (which panels, what the bubbles say) is entirely
-        comic-data.js. Shown/hidden by ui.js in lockstep with game.js's
-        state.
+        Real DOM comic viewer (PLAN.md task 4.3; task 2, playtest round 2,
+        switched it from one-panel-at-a-time to a stacking read). Advancing
+        appends another panel frame to #comic-panel-list and smoothly
+        scrolls it into view -- earlier panels stay put, scrolled up.
+        comics.js owns building each panel's frame/bubbles from
+        comic-data.js; #comic-scroll is the only element that scrolls, so
+        .comic-hint (a direct child of #comic-screen, not of the scrolling
+        region) stays fixed on screen throughout. Shown/hidden by ui.js in
+        lockstep with game.js's state.
       -->
-      <div id="comic-screen" class="dom-screen" hidden>
-        <div class="comic-frame" id="comic-frame">
-          <img id="comic-panel-image" alt="">
-          <div id="comic-bubble-layer" class="comic-bubble-layer"></div>
+      <div id="comic-screen" class="dom-screen comic-screen" hidden>
+        <div id="comic-scroll" class="comic-scroll">
+          <div id="comic-panel-list" class="comic-panel-list"></div>
         </div>
         <p class="comic-hint">Click or press Space to continue</p>
       </div>

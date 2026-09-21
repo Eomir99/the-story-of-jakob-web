@@ -13,7 +13,7 @@
 //            until it hits a bound, then recovers dazed -- the only time
 //            it can be hurt. Teaches "dodge, then punish".
 
-import { ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, TELEGRAPH, DAMAGE_FLASH, HAZARD } from './config.js';
+import { ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, TELEGRAPH, DAMAGE_FLASH, HAZARD, ACTIVATION } from './config.js';
 
 // AGENTS.md §4: every attack's wind-up must be 0.8-1.0s -- the rule applies
 // to enemies, not only bosses. Same guard bosses.js runs over its own
@@ -30,16 +30,26 @@ for (const [name, duration] of [
   }
 }
 
-export function createMathbookEnemy(x, y) {
+// `overrides` (task 1): level data may override hp and idleDuration per
+// instance -- used to keep the first, tutorial placement at its old,
+// gentler values while the other two pick up the new default tuning.
+export function createMathbookEnemy(x, y, overrides = {}) {
   return {
     type: 'mathbook',
     x,
     y,
     width: ENEMY_MATHBOOK.width,
     height: ENEMY_MATHBOOK.height,
-    hp: ENEMY_MATHBOOK.hp,
+    hp: overrides.hp ?? ENEMY_MATHBOOK.hp,
+    idleDuration: overrides.idleDuration ?? ENEMY_MATHBOOK.idleDuration,
     alive: true,
     hitFlash: 0,
+    // Dormant until the player is within ACTIVATION.enemyLeadDistance
+    // (config.js) -- see the note there. Nothing below runs until then
+    // (updateEnemy); activateEnemy starts the first wind-up the instant it
+    // does.
+    active: false,
+    activationX: x - ACTIVATION.enemyLeadDistance,
     // Repeating fire cycle: idle countdown, then a visible wind-up
     // (telegraph), then one shot, then back to idle. `telegraph` is null
     // between wind-ups and { timer, duration } while one is running.
@@ -70,6 +80,9 @@ export function createFootballHelmetEnemy(x, y) {
     hp: ENEMY_HELMET.hp,
     alive: true,
     hitFlash: 0,
+    // Dormant until activation, same as the maths book above.
+    active: false,
+    activationX: x - ACTIVATION.enemyLeadDistance,
     facing: 1, // 1 = right, -1 = left; re-faces the player every idle frame
     // 'idle' | 'telegraph' | 'charging' | 'recovering'.
     state: 'idle',
@@ -91,10 +104,31 @@ export function createFootballHelmetEnemy(x, y) {
 export function updateEnemy(enemy, dt, player) {
   if (enemy.hitFlash > 0) enemy.hitFlash -= dt;
   if (!enemy.alive) return [];
+  // task 1: dormant until activated (game.js's activateEnemyIfReached).
+  // The inbox has no `active` field and is exempt -- it never attacks, so
+  // there is no cycle for it to wake up into.
+  if (enemy.active === false) return [];
 
   if (enemy.type === 'mathbook') return updateMathbookEnemy(enemy, dt);
   if (enemy.type === 'helmet') return updateHelmetEnemy(enemy, dt, player);
   return [];
+}
+
+// Called once by game.js the instant the player crosses activationX. Skips
+// straight to the wind-up instead of a full idle/cooldown, so the first
+// attack lands roughly one telegraph duration after activation -- see
+// config.js ACTIVATION.
+export function activateEnemy(enemy) {
+  enemy.active = true;
+  if (enemy.type === 'mathbook') {
+    enemy.telegraph = { timer: ENEMY_MATHBOOK.telegraphDuration, duration: ENEMY_MATHBOOK.telegraphDuration };
+  } else if (enemy.type === 'helmet') {
+    // Still passes through one idle tick so facing and the point-blank
+    // check run normally -- stateTimer is preset to already satisfy
+    // idleMinDuration, so that tick falls straight through to telegraph.
+    enemy.state = 'idle';
+    enemy.stateTimer = ENEMY_HELMET.idleMinDuration;
+  }
 }
 
 function updateMathbookEnemy(enemy, dt) {
@@ -102,7 +136,7 @@ function updateMathbookEnemy(enemy, dt) {
     enemy.telegraph.timer -= dt;
     if (enemy.telegraph.timer <= 0) {
       enemy.telegraph = null;
-      enemy.cycleTimer = ENEMY_MATHBOOK.idleDuration;
+      enemy.cycleTimer = enemy.idleDuration;
       return [fireMathbookProjectile(enemy)];
     }
     return [];
@@ -207,6 +241,12 @@ function isPlayerPointBlank(enemy, player) {
 // can trigger a kill bark (task 3.9) exactly once per death.
 export function damageEnemy(enemy, amount) {
   if (!enemy.alive || enemy.type === 'inbox') return false;
+  // task 1: same guarantee as the bosses' damage functions -- a shot fired
+  // from beyond activationX, before the enemy has woken up, must not be
+  // able to chip it for free. Both affected types have a long enough
+  // projectile range (PROJECTILE.lifetime * .speed) to otherwise reach an
+  // enemy that hasn't activated yet.
+  if (enemy.active === false) return false;
   // The helmet is invulnerable outside recovery -- charging (and idling,
   // and telegraphing) cannot be interrupted by damage.
   if (enemy.type === 'helmet' && enemy.state !== 'recovering') return false;

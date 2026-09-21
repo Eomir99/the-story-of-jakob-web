@@ -1,11 +1,13 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
+import { getImage } from './assets.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
-import { createMathbookEnemy, createInboxEnemy, createFootballHelmetEnemy, updateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
+import { createMathbookEnemy, createInboxEnemy, createFootballHelmetEnemy, updateEnemy, activateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
 import {
   createResearchGolem,
+  activateResearchGolem,
   updateResearchGolem,
   damageResearchGolem,
   drawResearchGolem,
@@ -14,6 +16,7 @@ import {
   findResearchGolemClaimHit,
   resolveClaimShot,
   createGraduationBoss,
+  activateGraduationBoss,
   updateGraduationBoss,
   damageGraduationBoss,
   drawGraduationBoss,
@@ -107,6 +110,26 @@ let nextComicTriggerIndex;
 let arenaWallX = null;
 let arenaLockCameraX = null;
 let lockedBoss = null;
+// Research Golem venue repair task: the world x of the venue's own exit
+// door (level.js RESEARCH_GOLEM_EXIT_X, carried on the boss-research-golem
+// entry as exitX), or null before the level's loaded. Together with
+// boss.activationX this is the whole explicit interior/exterior state --
+// see researchGolemInterior() below.
+let researchGolemExitX = null;
+// Backtrack/re-entry repair task (§7/§10): a one-way ratchet, independent of
+// arenaWallX (which drops the instant a boss dies, fine for every other
+// boss but not this venue -- the player must never walk back out the
+// entrance even after winning, and never back in through the exit once
+// they've left). null until the player first reaches the venue; then it
+// only ever moves forward -- see applyResearchGolemBoundary.
+let researchGolemBoundaryX = null;
+// Post-boss exit repair task (§9): mirrors bossApproaches/approachPhase
+// above but far simpler -- one trigger, one timer, no phases, no camera or
+// comic. See level.js RESEARCH_GOLEM_EXIT_WALK_TRIGGER_X and
+// updateResearchGolemExitWalk.
+let researchGolemExitWalkTriggerX = null;
+let exitWalkActive = false;
+let exitWalkTimer = 0;
 let spawnPoint;
 // Hitstop (config.js HITSTOP): while this is running the fixed step does
 // nothing at all -- no movement, no timers, no attacks. One counter, not
@@ -135,6 +158,13 @@ export function startGame(canvas) {
   canvas.width = CANVAS.width;
   canvas.height = CANVAS.height;
   ctx = canvas.getContext('2d');
+  // Pixel-art scaling everywhere (AGENTS.md background direction): images
+  // are drawn scaled -- runtime background/landmark delivery files are
+  // resized off their display box (scripts/runtime-assets.py) -- and
+  // bilinear smoothing visibly blurs that detail away. The transition
+  // blend canvases already disable this locally; without it here too,
+  // ordinary (non-transition) rendering looked blurrier than mid-transition.
+  ctx.imageSmoothingEnabled = false;
   initInput();
 
   loadLevel();
@@ -167,6 +197,12 @@ export function startFromTitle() {
 // have been a Space press, and PLAYING reads Space as jump.
 export function advanceFromComic() {
   if (gameState !== STATE.COMIC) return;
+  // Undoes beginBossApproach's setInputSuppressed(true) (task 3) if this
+  // comic followed a boss approach -- harmless no-op otherwise. Nothing
+  // reads input while gameState is COMIC, so it doesn't matter that this
+  // runs at dismissal rather than the instant the comic opened; it only
+  // has to be off again before PLAYING resumes below.
+  setInputSuppressed(false);
   resetInput();
   setGameState(pendingComicNext);
   activeComicId = null;
@@ -174,6 +210,13 @@ export function advanceFromComic() {
 }
 
 function enterComic(comicId, next) {
+  // Task 3, playtest round 2: clears whatever gameplay input was held or
+  // buffered the instant a comic opens (e.g. left mouse still down from
+  // firing when a boss-room trigger fires), so nothing carried over from
+  // before it can bleed through. comics.js's own showComic adds the
+  // ~400ms click/Space lockout (config.js COMIC) on top of this -- this
+  // applies to every comic, not only the boss ones.
+  resetInput();
   activeComicId = comicId;
   pendingComicNext = next;
   setGameState(STATE.COMIC);
@@ -292,6 +335,143 @@ function endUtspring() {
   player.autoRun = null;
   player.invincible = false;
   setInputSuppressed(false);
+}
+
+// --- The boss approach (task 3, playtest round 2; camera-reveal repair) ----
+//
+// A comic used to open the instant the player crossed a line, which meant
+// it could land mid-stride, and a click/press meant for something else
+// (fire, most often) could skip its first panel before it was ever read
+// (see enterComic's resetInput and config.js COMIC). Both bosses get a
+// short scripted sequence instead, driven by a small table (level.js's
+// 'boss-approach' entries) rather than a cutscene framework (AGENTS.md
+// §7.10).
+//
+// Two shapes of that sequence exist, chosen per entry by whether it carries
+// a revealCameraX (level.js):
+//
+//   Research Golem (has revealCameraX + reactBark) -- REVEAL, REACT, WALK:
+//     the player stops dead, the camera glides on its own to an authored
+//     framing of the façade and holds there, Jakob reacts, then he walks
+//     the rest of the way to the door with the camera still locked. No
+//     beat after the walk -- the comic opens the instant he reaches it.
+//   Graduation (neither field set) -- WALK, BEAT: the original, simpler
+//     beat, unchanged. Its own venue art is future work (PLAN.md 6.8b), so
+//     it keeps walking immediately and reveals its arena/boss framing the
+//     way this always worked, with a settle beat before the comic.
+const APPROACH = { REVEAL: 'reveal', REACT: 'react', WALK: 'walk', BEAT: 'beat' };
+let bossApproaches; // sorted ascending by x: [{ x, comicId, arenaEntranceX, boss, revealCameraX?, reactBark? }]
+let nextBossApproachIndex;
+let approachPhase = null; // null whenever no approach is running
+let approachTimer = 0;
+let activeApproach = null;
+
+// Called first in every step, same reasoning as updateUtspring: the
+// sequence has to set autoRun before updatePlayer reads it this step.
+function updateBossApproach(dt) {
+  if (approachPhase === null) {
+    const trigger = bossApproaches[nextBossApproachIndex];
+    if (!trigger || player.x < trigger.x) return;
+    nextBossApproachIndex += 1;
+    beginBossApproach(trigger);
+    return;
+  }
+
+  approachTimer += dt;
+
+  if (approachPhase === APPROACH.REVEAL) {
+    // Player stopped; arenaLockCameraX was set to the reveal target in
+    // beginBossApproach, and updateCamera's existing easing (below) is
+    // already gliding camera.x toward it every frame -- no separate pan
+    // code needed here, just the wait.
+    if (approachTimer >= BOSS_APPROACH.revealDuration) {
+      spawnBark(player, activeApproach.reactBark);
+      approachPhase = APPROACH.REACT;
+      approachTimer = 0;
+    }
+    return;
+  }
+
+  if (approachPhase === APPROACH.REACT) {
+    // Camera stays locked at the same reveal target throughout -- nothing
+    // to do here but hold for the reaction to read, then start walking.
+    if (approachTimer >= BOSS_APPROACH.reactDuration) {
+      player.autoRun = PLAYER.moveSpeed;
+      approachPhase = APPROACH.WALK;
+      approachTimer = 0;
+    }
+    return;
+  }
+
+  if (approachPhase === APPROACH.WALK) {
+    if (approachTimer >= BOSS_APPROACH.walkDuration) {
+      player.autoRun = 0; // arrival: comes to a stop
+      // Lands exactly on the arena's own activation line -- see the note
+      // on RESEARCH_GOLEM_TAKEOVER_X/GRADUATION_APPROACH_X in level.js --
+      // so the real fight (checkBossActivation) starts the instant control
+      // returns from the comic, with no further walking needed.
+      player.x = activeApproach.arenaEntranceX;
+      if (activeApproach.revealCameraX !== undefined) {
+        // Research Golem: no post-walk beat -- "comic ends → gameplay
+        // immediately" starts with the walk itself ending at the door.
+        endBossApproach();
+      } else {
+        approachPhase = APPROACH.BEAT;
+        approachTimer = 0;
+      }
+    }
+    return;
+  }
+
+  // BEAT: stopped, a brief pause before the comic opens (Graduation only).
+  if (approachTimer >= BOSS_APPROACH.beatDuration) endBossApproach();
+}
+
+function beginBossApproach(trigger) {
+  activeApproach = trigger;
+  approachTimer = 0;
+  // Input ignored throughout (fire included), same as the utspring --
+  // setInputSuppressed drops whatever was held/buffered on the way in, and
+  // endBossApproach below never turns it back on before the comic's own
+  // lockout (config.js COMIC) takes over, so there is no gap between the
+  // two.
+  setInputSuppressed(true);
+  player.invincible = true;
+
+  if (trigger.revealCameraX !== undefined) {
+    // Research Golem: stop dead first -- the camera moves, not Jakob.
+    // arenaLockCameraX is the same override updateCamera already respects
+    // for the boss-fight framing further down this file; reusing it here
+    // is what "the simplest boss-specific scripted movement possible"
+    // (task brief) means -- no second camera system.
+    player.autoRun = 0;
+    approachPhase = APPROACH.REVEAL;
+    arenaLockCameraX = trigger.revealCameraX;
+    return;
+  }
+
+  // Graduation's original flow: walk immediately, camera reveals the
+  // arena/boss framing early so it's already in view by the time the
+  // character stops and the comic opens.
+  approachPhase = APPROACH.WALK;
+  player.autoRun = PLAYER.moveSpeed; // forward at normal speed -- walking, not running
+  const bossEntity = bossFor(trigger.boss);
+  const arenaCenterX = (trigger.arenaEntranceX + bossEntity.x + bossEntity.width) / 2;
+  arenaLockCameraX = arenaCenterX - CANVAS.width / 2;
+}
+
+function bossFor(bossKey) {
+  return bossKey === 'research-golem' ? boss : graduationBoss;
+}
+
+function endBossApproach() {
+  const comicId = activeApproach.comicId;
+  approachPhase = null;
+  approachTimer = 0;
+  activeApproach = null;
+  player.autoRun = null;
+  player.invincible = false;
+  enterComic(comicId, STATE.PLAYING);
 }
 
 // The size of the visible world rectangle while the camera is widened.
@@ -416,7 +596,7 @@ function drawDeathBursts(ctx) {
   ctx.globalAlpha = 1;
 }
 
-// Level-data-driven comic beats (story beats 5, 7 and 9 in AGENTS.md §3):
+// Level-data-driven comic beats (story beats 5, 9 and 11 in AGENTS.md §3):
 // once the player's x crosses a comic-trigger entry, gameplay pauses into
 // the comic viewer. `next` is 'playing' to resume the fight ahead, or
 // 'application' for the final comic, which ends the game there -- no
@@ -447,27 +627,38 @@ function loadLevel() {
   const checkpointXs = [];
   const sections = [];
   const triggers = [];
+  const approaches = [];
   landmarks = [];
   levelElapsed = 0;
   sectionElapsed = 0;
   timedSectionIndex = -1;
+  approachPhase = null;
+  approachTimer = 0;
+  activeApproach = null;
+  researchGolemExitX = null;
+  researchGolemExitWalkTriggerX = null;
+  researchGolemBoundaryX = null;
+  exitWalkActive = false;
+  exitWalkTimer = 0;
 
   for (const entry of LEVEL) {
     const y = entryY(entry);
     if (entry.type === 'player-spawn') {
       spawnPoint = { x: entry.x, y };
     } else if (entry.type === 'enemy-mathbook') {
-      enemies.push(createMathbookEnemy(entry.x, y));
+      enemies.push(createMathbookEnemy(entry.x, y, { hp: entry.hp, idleDuration: entry.idleDuration }));
     } else if (entry.type === 'enemy-inbox') {
       enemies.push(createInboxEnemy(entry.x, y));
     } else if (entry.type === 'enemy-helmet') {
       enemies.push(createFootballHelmetEnemy(entry.x, y));
     } else if (entry.type === 'boss-research-golem') {
       boss = createResearchGolem(entry.x, y, entry.activationX);
+      researchGolemExitX = entry.exitX ?? null;
+      researchGolemExitWalkTriggerX = entry.exitWalkTriggerX ?? null;
     } else if (entry.type === 'boss-graduation') {
       graduationBoss = createGraduationBoss(entry.x, y, entry.activationX);
     } else if (entry.type === 'platform') {
-      platforms.push({ x: entry.x, y, width: PLATFORM.width, height: PLATFORM.height });
+      platforms.push({ x: entry.x, y, width: PLATFORM.width, height: PLATFORM.height, walkway: entry.walkway === true });
     } else if (entry.type === 'pickup') {
       pickups.push({ x: entry.x, y, width: PICKUP.width, height: PICKUP.height, outfit: entry.outfit, collected: false });
       checkpointXs.push(entry.x); // AGENTS.md §6: invisible checkpoints at each pickup
@@ -481,6 +672,18 @@ function loadLevel() {
       utspringTrigger = { x: entry.x, markY: y };
     } else if (entry.type === 'comic-trigger') {
       triggers.push({ x: entry.x, comicId: entry.comicId, next: entry.next });
+    } else if (entry.type === 'boss-approach') {
+      approaches.push({
+        x: entry.x,
+        comicId: entry.comicId,
+        arenaEntranceX: entry.arenaEntranceX,
+        boss: entry.boss,
+        // Both undefined unless the level entry sets them (Research Golem
+        // only, currently) -- their presence is what tells
+        // beginBossApproach to run the camera-reveal sequence at all.
+        revealCameraX: entry.revealCameraX,
+        reactBark: entry.reactBark,
+      });
     }
   }
 
@@ -494,6 +697,10 @@ function loadLevel() {
   triggers.sort((a, b) => a.x - b.x);
   comicTriggers = triggers;
   nextComicTriggerIndex = 0;
+
+  approaches.sort((a, b) => a.x - b.x);
+  bossApproaches = approaches;
+  nextBossApproachIndex = 0;
 }
 
 // Focus/visibility handling (task 3.10): true whenever the tab is hidden
@@ -575,11 +782,15 @@ function step(dt) {
   // Before the player updates: the sequence owns their movement while it
   // is running, so it has to set autoRun for this step first.
   updateUtspring(dt);
+  updateBossApproach(dt);
+  updateResearchGolemExitWalk(dt);
   const spawned = updatePlayer(player, dt, spawnPoint, platforms);
   if (spawned.length > 0) projectiles.push(...spawned);
   checkBossActivation();
+  checkEnemyActivation();
   applySolidWalls();
   applyArenaWall();
+  applyResearchGolemBoundary();
   updateProjectiles(dt);
   for (const enemy of enemies) {
     const enemySpawned = updateEnemy(enemy, dt, player);
@@ -658,8 +869,8 @@ function clampBehindSolidBoss(bossEntity, spec) {
 // skipped and nothing scrolls out of view mid-dodge. Both clear the
 // instant that boss dies.
 function checkBossActivation() {
-  activateBossIfReached(boss);
-  activateBossIfReached(graduationBoss);
+  activateBossIfReached(boss, activateResearchGolem);
+  activateBossIfReached(graduationBoss, activateGraduationBoss);
 
   if (lockedBoss && !lockedBoss.alive) {
     arenaWallX = null;
@@ -668,15 +879,73 @@ function checkBossActivation() {
   }
 }
 
-function activateBossIfReached(bossEntity) {
+function activateBossIfReached(bossEntity, activate) {
   if (!bossEntity || bossEntity.active || !bossEntity.alive) return;
   if (player.x < bossEntity.activationX) return;
 
-  bossEntity.active = true;
+  activate(bossEntity); // task 1: starts the first wind-up immediately
   arenaWallX = bossEntity.activationX;
   lockedBoss = bossEntity;
   const arenaCenterX = (arenaWallX + bossEntity.x + bossEntity.width) / 2;
   arenaLockCameraX = arenaCenterX - CANVAS.width / 2;
+  // Backtrack repair task (§7): this venue's own boundary, independent of
+  // arenaWallX above -- only the Research Golem needs one that outlives the
+  // fight (see applyResearchGolemBoundary). Graduation is untouched.
+  if (bossEntity === boss) researchGolemBoundaryX = bossEntity.activationX;
+}
+
+// Backtrack/re-entry repair task (§7/§10): keeps the player from ever
+// walking back through either of the venue's own doors. Deliberately
+// separate from arenaWallX, which checkBossActivation drops the instant
+// the boss dies -- fine for every other boss, but this venue must stay
+// one-way for the whole time the player is inside AND after they've left
+// (task brief §10: walking back toward the façade must not reopen the
+// interior). Sets once, on activation, then only ever ratchets forward --
+// from the entrance door to the exit door, the moment the player actually
+// crosses it -- never back.
+function applyResearchGolemBoundary() {
+  if (researchGolemBoundaryX === null) return;
+  if (researchGolemExitX !== null && player.x >= researchGolemExitX) researchGolemBoundaryX = researchGolemExitX;
+  if (player.x < researchGolemBoundaryX) player.x = researchGolemBoundaryX;
+}
+
+// Post-boss exit repair task (§9): a short, quiet auto-walk through the
+// exit door -- control taken a short distance before it, Jakob carried the
+// rest of the way at normal speed, control given back just past it -- so
+// the arena/Haga render-state flip (RESEARCH_GOLEM_EXIT_X) reads as an
+// authored beat instead of a cut mid-stride. One-shot: fires once, then
+// disarms itself. Same primitives as updateBossApproach's WALK phase
+// (player.autoRun, setInputSuppressed), just without the phases, camera
+// move or comic that entrance gets -- this is deliberately smaller.
+function updateResearchGolemExitWalk(dt) {
+  if (researchGolemExitWalkTriggerX === null) return;
+
+  if (!exitWalkActive) {
+    if (player.x < researchGolemExitWalkTriggerX) return;
+    exitWalkActive = true;
+    exitWalkTimer = 0;
+    setInputSuppressed(true);
+    player.invincible = true;
+    player.autoRun = PLAYER.moveSpeed;
+    return;
+  }
+
+  exitWalkTimer += dt;
+  if (exitWalkTimer >= RESEARCH_GOLEM_EXIT.walkDuration) {
+    player.autoRun = null;
+    player.invincible = false;
+    setInputSuppressed(false);
+    exitWalkActive = false;
+    researchGolemExitWalkTriggerX = null; // one-shot: never fires again
+  }
+}
+
+// task 1: the maths book and football helmet get the same proximity
+// activation the bosses already had -- see config.js ACTIVATION.
+function checkEnemyActivation() {
+  for (const enemy of enemies) {
+    if (enemy.active === false && player.x >= enemy.activationX) activateEnemy(enemy);
+  }
 }
 
 function applyArenaWall() {
@@ -919,26 +1188,8 @@ function visibleWorldRect() {
   };
 }
 
-// Backgrounds are chosen by what is on screen rather than clipped to
-// their own x-range: a layer at parallax 0.15 does not sit still against
-// the world, so clipping it at a world boundary would tear. Instead one
-// section is drawn across the whole view, and inside a blend band the
-// next one is drawn over it at a rising alpha.
-//
-// The band -- not the section -- decides who is outgoing and who is
-// incoming, and that distinction matters. Picking "the section the view
-// is in" and fading its neighbour towards it reverses the roles at the
-// boundary, and because each background stacks three layers whose alphas
-// compound, the two halves do not meet: measured across this boundary the
-// incoming section jumped from about 75% back to 25% in one pixel of
-// movement -- a backwards flicker exactly where the crossfade exists to
-// prevent one. Anchoring on the band means alpha runs 0 -> 1 straight
-// through, and nothing swaps over mid-fade.
-//
-// At alpha 1 the incoming section must fully hide the outgoing one, so
-// every background needs at least one opaque full-view layer. All of them
-// have one (see config.js BACKGROUNDS). Bands must also not overlap, so
-// no section may be shorter than BACKGROUND.blendBandWidth.
+// The boundary band selects the two active environments and their weights.
+// Their layers are composited by depth below, never as two complete stacks.
 function drawBackground(ctx) {
   if (!backgroundSections || backgroundSections.length === 0) return;
 
@@ -949,45 +1200,101 @@ function drawBackground(ctx) {
     const boundary = backgroundSections[i].xEnd;
     if (refX > boundary - half && refX < boundary + half) {
       const blend = (refX - (boundary - half)) / BACKGROUND.blendBandWidth; // 0 -> 1
-      drawBackgroundLayers(ctx, backgroundSections[i].background, 1);
-      drawBackgroundLayers(ctx, backgroundSections[i + 1].background, blend);
+      drawBackgroundDepths(ctx, backgroundSections[i].background, backgroundSections[i + 1].background, blend);
       return;
     }
   }
 
-  drawBackgroundLayers(ctx, backgroundSections[sectionIndexAt(refX)].background, 1);
+  drawBackgroundDepths(ctx, backgroundSections[sectionIndexAt(refX)].background);
 }
 
-function drawBackgroundLayers(ctx, backgroundKey, alpha) {
-  const background = BACKGROUNDS[backgroundKey];
-  if (!background) return;
-  ctx.globalAlpha = alpha;
-  for (const layer of background.layers) drawBackgroundLayer(ctx, layer);
-  ctx.globalAlpha = 1;
+// Composite the transition within each depth, then draw depths globally.
+// Weighted premultiplied-alpha addition gives (1-t)*A + t*B, rather than
+// stacking two opaque mid scenes. Scratch canvases are allocated only once.
+const backgroundDepths = ['sky', 'far', 'mid', 'near'];
+let backgroundBlendCanvases;
+
+function backgroundDepth(layer) {
+  if (layer.depth) return layer.depth;
+  if (layer.source.type === 'color' || layer.source.type === 'gradient') return 'sky';
+  // Legacy silhouette placeholders are the close scenery in each section.
+  return 'near';
 }
 
-// Parallax is applied horizontally only. Vertically the layer stays in
-// world space, which is what keeps a silhouette planted on the ground
-// line instead of drifting off it when the camera moves or the utspring
-// widens the view.
+function drawBackgroundDepths(ctx, outgoingKey, incomingKey, blend = 0) {
+  const outgoing = BACKGROUNDS[outgoingKey]?.layers ?? [];
+  const incoming = BACKGROUNDS[incomingKey]?.layers ?? [];
+  if (!incomingKey) {
+    for (const depth of backgroundDepths) {
+      for (const layer of outgoing) {
+        if (backgroundDepth(layer) === depth) drawBackgroundLayer(ctx, layer);
+      }
+    }
+    return;
+  }
+  if (!backgroundBlendCanvases) {
+    backgroundBlendCanvases = Array.from({ length: 3 }, () => {
+      const canvas = document.createElement('canvas');
+      canvas.width = CANVAS.width;
+      canvas.height = CANVAS.height;
+      return canvas;
+    });
+  }
+  const transform = ctx.getTransform();
+  for (const depth of backgroundDepths) {
+    for (const [index, layers] of [outgoing, incoming].entries()) {
+      const scratch = backgroundBlendCanvases[index].getContext('2d');
+      scratch.resetTransform();
+      scratch.clearRect(0, 0, CANVAS.width, CANVAS.height);
+      scratch.imageSmoothingEnabled = false;
+      scratch.setTransform(transform);
+      for (const layer of layers) {
+        if (backgroundDepth(layer) === depth) drawBackgroundLayer(scratch, layer);
+      }
+    }
+    const mixed = backgroundBlendCanvases[2].getContext('2d');
+    mixed.clearRect(0, 0, CANVAS.width, CANVAS.height);
+    mixed.globalCompositeOperation = 'source-over';
+    mixed.globalAlpha = 1 - blend;
+    mixed.drawImage(backgroundBlendCanvases[0], 0, 0);
+    mixed.globalCompositeOperation = 'lighter';
+    mixed.globalAlpha = blend;
+    mixed.drawImage(backgroundBlendCanvases[1], 0, 0);
+    mixed.globalAlpha = 1;
+    mixed.globalCompositeOperation = 'source-over';
+    ctx.save();
+    ctx.resetTransform();
+    ctx.drawImage(backgroundBlendCanvases[2], 0, 0);
+    ctx.restore();
+  }
+}
+
+// One legacy `parallax` value still applies to both axes. A layer can opt
+// into independent depth with parallaxX/parallaxY; unspecified axes fall
+// back to the legacy value, then to ordinary world tracking (1). Grounded
+// architecture uses parallaxY: 1, making shiftY zero so its baseline moves
+// through screen space exactly as WORLD.groundY does when camera.y changes.
 function drawBackgroundLayer(ctx, layer) {
   const view = visibleWorldRect();
-  const shift = camera.x * (1 - layer.parallax);
+  const parallaxX = layer.parallaxX ?? layer.parallax ?? 1;
+  const parallaxY = layer.parallaxY ?? layer.parallax ?? 1;
+  const shiftX = camera.x * (1 - parallaxX);
+  const shiftY = camera.y * (1 - parallaxY);
   // Overfilled by the screen-shake ceiling (doubled, since the utspring
   // pull-back means a screen-space pixel can be more than a world pixel).
   // Without it a shake slides the fills off the edge of the screen and
   // leaves a bare strip down the side of the frame.
   const bleed = SHAKE.maxAmplitude * 2;
   // In this translated space, the visible span starts here.
-  const left = view.left - shift - bleed;
+  const left = view.left - shiftX - bleed;
   const right = left + view.width + bleed * 2;
 
   ctx.save();
-  ctx.translate(shift, 0);
+  ctx.translate(shiftX, shiftY);
   const source = layer.source;
 
   const fillWidth = right - left;
-  const fillTop = view.top - bleed;
+  const fillTop = view.top - shiftY - bleed;
   const fillHeight = view.height + bleed * 2;
 
   if (source.type === 'color') {
@@ -1001,6 +1308,8 @@ function drawBackgroundLayer(ctx, layer) {
     ctx.fillRect(left, fillTop, fillWidth, fillHeight);
   } else if (source.type === 'silhouette') {
     drawSilhouette(ctx, source, left, right);
+  } else if (source.type === 'image') {
+    drawImageTile(ctx, source, left, right);
   }
 
   ctx.restore();
@@ -1022,6 +1331,86 @@ function drawSilhouette(ctx, source, left, right) {
   }
 }
 
+// A strip of ordinary (non-seamless) artwork, repeated across the visible
+// span the way drawSilhouette repeats its rects. Tiles alternate
+// orientation -- even repeats normal, odd mirrored -- so a normal tile's
+// right edge always meets its own mirror image at the seam, which is
+// pixel-identical by construction (BACKGROUND-ASSET-SPEC.md's empty edge
+// margins keep that seam on empty sky rather than a symmetrical doubled
+// shape). Parity comes from the tile's world position
+// (floor(tileX / tileWidth)), never a running counter, so it can never
+// depend on which direction the player approached from or where the
+// camera started.
+//
+// displayHeight and baselineY are both measured in the strip's approved
+// display space (BACKGROUND-ASSET-SPEC.md), never the loaded image's own
+// pixel size -- a runtime delivery file can be stored at a smaller
+// resolution (scripts/runtime-assets.py RUNTIME_SIZE) and is scaled back
+// up to displayHeight here, the same way landmarks already scale to their
+// own configured width/height regardless of native resolution.
+function drawImageTile(ctx, source, left, right) {
+  const image = resolveBackgroundImage(source);
+  if (!image) return; // not loaded (or failed) yet -- draw nothing this frame, not an error
+  const { tileWidth, displayHeight, baselineY } = source;
+  // Continuous scenery: only landmarks consult local walkway heights.
+  const drawY = WORLD.groundY - baselineY;
+
+  for (let index = Math.floor(left / tileWidth); index * tileWidth < right; index++) {
+    const tileX = index * tileWidth;
+    const mirrored = (((index % 2) + 2) % 2) === 1; // floor-mod: correct for negative indices too
+    ctx.save();
+    if (mirrored) {
+      ctx.translate(tileX + tileWidth, 0);
+      ctx.scale(-1, 1);
+      ctx.drawImage(image, 0, drawY, tileWidth, displayHeight);
+    } else {
+      ctx.drawImage(image, tileX, drawY, tileWidth, displayHeight);
+    }
+    ctx.restore();
+  }
+}
+
+// Image sources choose their colour handling per asset. Full-colour is
+// the safe default: authored RGB reaches the canvas unchanged. Explicit
+// colorMode: 'tint' sources use source.color (the same field silhouette
+// sources already have), composited over white-plus-alpha artwork so an
+// atmospheric layer can still be recoloured without regeneration.
+//
+// Cached per path+colour rather than recomputed per frame: tinting is a
+// full offscreen canvas draw plus a composite, and the same combination
+// is asked for every frame a section is on screen. Full-colour sources,
+// including sources with no colorMode field, return the loaded image
+// straight from assets.js's own cache.
+const tintedImageCache = new Map(); // `${path}::${color}` -> offscreen canvas
+
+function resolveBackgroundImage(source) {
+  const raw = getImage(source.path);
+  if (!raw || source.colorMode !== 'tint' || !source.color) return raw;
+
+  const key = `${source.path}::${source.color}`;
+  let tinted = tintedImageCache.get(key);
+  if (!tinted) {
+    tinted = tintImage(raw, source.color);
+    tintedImageCache.set(key, tinted);
+  }
+  return tinted;
+}
+
+function tintImage(image, color) {
+  const canvas = document.createElement('canvas');
+  canvas.width = image.width;
+  canvas.height = image.height;
+  const tintCtx = canvas.getContext('2d');
+  tintCtx.drawImage(image, 0, 0);
+  // Keeps the source's own alpha (the white shapes) and replaces the RGB
+  // under it with the section colour -- exactly what 'source-in' means:
+  // the new fill only shows up where the existing content was opaque.
+  tintCtx.globalCompositeOperation = 'source-in';
+  tintCtx.fillStyle = color;
+  tintCtx.fillRect(0, 0, canvas.width, canvas.height);
+  return canvas;
+}
+
 // One-off background objects, each at its own parallax.
 //
 // A landmark is anchored to its own placement, which a tiled layer is
@@ -1036,9 +1425,41 @@ function drawSilhouette(ctx, source, left, right) {
 // and drifts from there at its own rate. Place one at an x and that is
 // where you meet it, whatever its parallax; parallax then only decides
 // how fast it slides past once you are there.
+function walkwayTopAt(x) {
+  let top = WORLD.groundY;
+  for (const platform of platforms) {
+    if (platform.walkway && x >= platform.x && x < platform.x + platform.width) {
+      top = Math.min(top, platform.y);
+    }
+  }
+  return top;
+}
+
+// Research Golem venue repair task: the whole "never visible at the same
+// time" rule (task brief) in one derived boolean, computed fresh from
+// player.x every call rather than a flag toggled at trigger points -- it
+// can never desync from where the player actually is, walking forward or
+// back. True from the moment the comic hands control back at the arena's
+// left door (boss.activationX) up to the moment the player reaches its
+// right door (researchGolemExitX, level.js RESEARCH_GOLEM_EXIT_X). False
+// throughout the pre-comic approach (REVEAL/REACT/WALK never move player.x
+// past activationX -- see updateBossApproach) and again once outside.
+function researchGolemInterior() {
+  if (!boss || researchGolemExitX === null) return false;
+  return player.x >= boss.activationX && player.x < researchGolemExitX;
+}
+
 function drawLandmarks(ctx) {
   const view = visibleWorldRect();
+  const insideResearchGolem = researchGolemInterior();
   for (const placement of landmarks) {
+    // Explicit state, not draw-order masking (repair task): the façade (in
+    // either its entrance or exit crop) and the enclosed arena must never
+    // both be eligible to draw, regardless of how far their wide bounding
+    // boxes reach into each other's world space.
+    if (insideResearchGolem && placement.landmark.startsWith('research-golem-facade')) continue;
+    if (!insideResearchGolem && placement.landmark === 'research-golem-arena') continue;
+
     const spec = LANDMARK.types[placement.landmark];
     if (!spec) continue;
 
@@ -1046,16 +1467,23 @@ function drawLandmarks(ctx) {
     const drawX = placement.x + (camera.x - homeCameraX) * (1 - placement.parallax);
     if (drawX + spec.width < view.left || drawX > view.left + view.width) continue;
 
-    const top = WORLD.groundY - spec.height;
-    // Held back so scenery reads as scenery (config.js LANDMARK.alpha).
-    ctx.globalAlpha = LANDMARK.alpha;
-    ctx.fillStyle = spec.color;
-    ctx.fillRect(Math.round(drawX), Math.round(top), spec.width, spec.height);
-    ctx.fillStyle = LANDMARK.labelColor;
-    ctx.font = LANDMARK.labelFont;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(spec.label, Math.round(drawX + spec.width / 2), Math.round(top - LANDMARK.labelGap));
+    const image = spec.path ? resolveBackgroundImage(spec) : null;
+    const groundY = placement.parallax === 1 ? walkwayTopAt(placement.x + spec.width / 2) : WORLD.groundY;
+    const footOffset = image && spec.baselineY !== undefined
+      ? spec.baselineY * spec.height / image.height : spec.height;
+    const top = groundY - footOffset;
+    ctx.globalAlpha = spec.alpha ?? LANDMARK.alpha;
+    if (image) {
+      ctx.drawImage(image, drawX, top, spec.width, spec.height);
+    } else {
+      ctx.fillStyle = spec.color;
+      ctx.fillRect(Math.round(drawX), Math.round(top), spec.width, spec.height);
+      ctx.fillStyle = LANDMARK.labelColor;
+      ctx.font = LANDMARK.labelFont;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'alphabetic';
+      ctx.fillText(spec.label, Math.round(drawX + spec.width / 2), Math.round(top - LANDMARK.labelGap));
+    }
     ctx.globalAlpha = 1;
   }
 }

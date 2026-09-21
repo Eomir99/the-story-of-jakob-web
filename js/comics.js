@@ -1,23 +1,30 @@
-// comics.js — the comic viewer (PLAN.md task 4.3). A cutscene, not a
-// scrolling page: exactly one panel is on screen at a time. All content
-// (panel images, bubble text and position) is comic-data.js; swapping a
-// comic for new artwork never touches this file (AGENTS.md §5).
+// comics.js — the comic viewer (PLAN.md task 4.3; task 2, playtest round
+// 2: a stacking read, not a one-panel-at-a-time cutscene). Advancing
+// appends the next panel to #comic-panel-list and scrolls it into view;
+// nothing already on screen is ever removed. All content (panel images,
+// bubble text and position) is comic-data.js; swapping a comic for new
+// artwork never touches this file (AGENTS.md §5).
 
+import { COMIC } from './config.js';
 import { COMICS } from './comic-data.js';
 import { advanceFromComic } from './game.js';
 
 const ASSET_BASE = './assets/comics/';
 
-let screen, frame, imageEl, bubbleLayer;
+let screen, scrollEl, panelListEl;
 let currentPanels = [];
-let currentPanelIndex = 0;
+let currentPanelIndex = -1; // -1: showComic hasn't added the first panel yet
+// Task 3, playtest round 2: a wall-clock deadline (COMIC.inputLockoutDuration
+// after the comic opened), not a simulation timer -- the fixed-timestep
+// step() doesn't run at all while a comic is showing (gameState !==
+// PLAYING), so there is no per-frame dt for this to count down with.
+let inputLockedUntil = 0;
 
 export function initComicViewer() {
   screen = document.querySelector('#comic-screen');
-  frame = document.querySelector('#comic-frame');
-  imageEl = document.querySelector('#comic-panel-image');
-  bubbleLayer = document.querySelector('#comic-bubble-layer');
-  if (!screen || !frame || !imageEl || !bubbleLayer) return;
+  scrollEl = document.querySelector('#comic-scroll');
+  panelListEl = document.querySelector('#comic-panel-list');
+  if (!screen || !scrollEl || !panelListEl) return;
 
   // Click or Space advances a panel (PLAN.md 4.3). Scoped to "screen not
   // hidden" rather than game state, so comics.js never needs to know
@@ -33,9 +40,18 @@ export function showComic(comicId) {
   const comic = COMICS[comicId];
   if (!screen || !comic) return;
   currentPanels = comic.panels;
-  currentPanelIndex = 0;
+  currentPanelIndex = -1;
+  panelListEl.innerHTML = '';
+  scrollEl.scrollTop = 0;
   screen.hidden = false;
-  renderPanel();
+  // Task 3: ignore clicks/Space/Enter for a short window after opening --
+  // see config.js COMIC. Catches a click or key meant for gameplay (most
+  // often held/clicked fire) landing on the comic the instant it appears
+  // and skipping panel 1 before it was ever read. game.js's enterComic
+  // already cleared input.js's own held/buffered state just before this
+  // runs, so the two together leave no gap for stray input to get through.
+  inputLockedUntil = performance.now() + COMIC.inputLockoutDuration * 1000;
+  addNextPanel(); // the first panel appears immediately, nothing to scroll to yet
 }
 
 export function hideComic() {
@@ -44,27 +60,56 @@ export function hideComic() {
 
 function advance() {
   if (!screen || screen.hidden) return;
-  currentPanelIndex += 1;
-  if (currentPanelIndex >= currentPanels.length) {
+  if (performance.now() < inputLockedUntil) return; // task 3: still in the open-lockout window
+  if (currentPanelIndex >= currentPanels.length - 1) {
     advanceFromComic(); // last panel dismissed -- game.js decides what's next
     return;
   }
-  renderPanel();
+  addNextPanel();
 }
 
-function renderPanel() {
+// Appends one panel frame below whatever is already stacked, then scrolls
+// so the new panel is what the eye lands on -- comfortably in view, not
+// jammed at the bottom edge. Waits for the image to actually have its
+// size (load event, or already cached/complete) before scrolling, since
+// scrolling to an unsized image would land in the wrong place the instant
+// it decodes and the page reflows under it.
+function addNextPanel() {
+  currentPanelIndex += 1;
   const panel = currentPanels[currentPanelIndex];
-  imageEl.src = ASSET_BASE + panel.image;
-  bubbleLayer.innerHTML = '';
+  const frame = buildPanelFrame(panel);
+  panelListEl.appendChild(frame);
+
+  const img = frame.querySelector('img');
+  const scrollToFrame = () => frame.scrollIntoView({ behavior: 'smooth', block: 'center' });
+  if (img.complete) scrollToFrame();
+  else img.addEventListener('load', scrollToFrame, { once: true });
+}
+
+function buildPanelFrame(panel) {
+  const frame = document.createElement('div');
+  frame.className = 'comic-frame';
+
+  const img = document.createElement('img');
+  img.className = 'comic-panel-image';
+  img.alt = '';
+  img.src = ASSET_BASE + panel.image;
+  frame.appendChild(img);
+
+  // Position/size are fractions of the panel's own rendered box (comic-
+  // data.js), not the screen -- .comic-frame (ui.css) shrinks to exactly
+  // the letterboxed image's box, so percentages here land on the artwork
+  // at any scale, independent of how tall neighbouring stacked panels are.
+  const bubbleLayer = document.createElement('div');
+  bubbleLayer.className = 'comic-bubble-layer';
   for (const bubble of panel.bubbles || []) {
     bubbleLayer.appendChild(buildBubble(bubble));
   }
+  frame.appendChild(bubbleLayer);
+
+  return frame;
 }
 
-// Position/size are fractions of the panel's own rendered box (comic-
-// data.js), not the screen -- #comic-frame (ui.css) shrinks to exactly
-// the letterboxed image's box, so percentages here land on the artwork
-// at any scale.
 function buildBubble(bubble) {
   const el = document.createElement('div');
   el.className = `comic-bubble comic-bubble--${bubble.kind} comic-bubble--tail-${bubble.tail}`;

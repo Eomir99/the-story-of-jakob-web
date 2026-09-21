@@ -1,14 +1,42 @@
 // assets.js — asset loading + manifest (AGENTS.md §5).
 //
-// The manifest is empty: no art or audio is integrated yet (that's
-// Milestone 6 -- see PLAN.md 6.1 and 6.6). loadAssets() is the real
-// mechanism the loading screen (task 4.2) depends on, not a placeholder;
-// it just has nothing to load today, so it resolves immediately. When
-// Milestone 6 adds real files, they get pushed into MANIFEST and this
-// function starts actually loading them -- the title screen doesn't
-// change.
+// The first runtime art pass integrates the approved Lund background
+// strips and landmarks. Every path remains project-relative so the same
+// manifest works locally and on GitHub Pages.
 
-export const MANIFEST = []; // { path } entries; empty until Milestone 6.
+export const MANIFEST = [
+  { path: 'assets/backgrounds/lund-town-far.webp' },
+  { path: 'assets/backgrounds/lund-town-mid.webp' },
+  { path: 'assets/backgrounds/polhem-school-mid.webp' },
+  { path: 'assets/backgrounds/polhem-staircase-mid.webp' },
+  { path: 'assets/backgrounds/uf-stand.webp' },
+  { path: 'assets/backgrounds/polhem-mech.webp' },
+  { path: 'assets/backgrounds/goteborg-city-far.webp' },
+  { path: 'assets/backgrounds/goteborg-city-mid.webp' },
+  { path: 'assets/backgrounds/goteborg-haga-mid.webp' },
+  { path: 'assets/backgrounds/research-golem-facade-entrance.webp' },
+  { path: 'assets/backgrounds/research-golem-facade-exit.webp' },
+  { path: 'assets/backgrounds/research-golem-arena.webp' },
+  { path: 'assets/player/base.png' },
+  { path: 'assets/player/studentmossa.png' },
+  { path: 'assets/player/suit.png' },
+  { path: 'assets/player/armour.png' },
+];
+
+// Loaded images, keyed by the same path used in MANIFEST -- background.js
+// (task 2, background art prep) reads these back by path for its 'image'
+// source layers rather than each caller tracking its own Image objects.
+const imageCache = new Map();
+
+// Returns the loaded image for a manifest path, or undefined if it hasn't
+// settled yet (still loading, or never listed). Callers that can render
+// without it just skip a frame's draw rather than treating this as an
+// error -- the same "a failed/missing asset never blocks the game"
+// principle as loadAssets below, just for a single lookup instead of the
+// whole loading screen.
+export function getImage(path) {
+  return imageCache.get(path);
+}
 
 // Loads every entry in MANIFEST, reporting progress via onProgress(0..1)
 // as each one settles. A failed asset still counts toward progress rather
@@ -33,7 +61,10 @@ export function loadAssets(onProgress) {
 function loadOne(entry) {
   return new Promise((resolve, reject) => {
     const image = new Image();
-    image.onload = resolve;
+    image.onload = () => {
+      imageCache.set(entry.path, image);
+      resolve();
+    };
     image.onerror = reject;
     image.src = entry.path;
   });

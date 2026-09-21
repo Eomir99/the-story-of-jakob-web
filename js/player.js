@@ -1,8 +1,24 @@
 // player.js — movement, gravity, jump, ground collision, shooting,
 // damage/death/respawn.
 
-import { PLAYER, PROJECTILE, WORLD, PICKUP, BARK, STUDENTMOSSA_OVERLAY, DAMAGE_FLASH } from './config.js';
+import { PLAYER, PROJECTILE, WORLD, PICKUP, BARK, DAMAGE_FLASH } from './config.js';
+import { getImage } from './assets.js';
 import { isActionDown, wasActionPressed } from './input.js';
+
+const PLAYER_SPRITES = {
+  none: 'assets/player/base.png',
+  studentmossa: 'assets/player/studentmossa.png',
+  suit: 'assets/player/suit.png',
+  armour: 'assets/player/armour.png',
+};
+
+// Every prepared variant keeps the same 128px canvas and foot pivot. These
+// are authored asset coordinates, not gameplay tuning: anchoring this point
+// to the existing hitbox's bottom-centre keeps every outfit planted without
+// changing the collision box or world position.
+const SPRITE_FOOT_X = 66;
+const SPRITE_FOOT_Y = 120;
+const SPRITE_VISIBLE_TOP_Y = 14;
 
 export function createPlayer(x, y) {
   return {
@@ -250,17 +266,7 @@ export function drawPlayer(ctx, player) {
   // white studentmössa overlay.
   const blinking =
     player.invulnerableFor > 0 && Math.floor(player.invulnerableFor * PLAYER.invulnerableBlinkRate) % 2 === 0;
-  // Grey-box stand-in for the outfit change: tint the rectangle by the
-  // current pickup's color. Real sprite swap arrives with art (Milestone
-  // 6, AGENTS.md §6) -- this just makes the state change observable
-  // before then. The studentmössa is deliberately not a tint: AGENTS.md
-  // §6 makes it an overlay on the base character, drawn below.
-  // The damage flash overrides both the outfit colour and the blink. The
-  // blink exists to show that the grace period is running, but the moment
-  // of the hit itself must never be the moment the player is hardest to
-  // see.
   const flashing = player.hitFlashTimer > 0;
-  const baseColor = flashing ? DAMAGE_FLASH.playerColor : PICKUP.colors[player.outfit] || PLAYER.color;
   ctx.globalAlpha = blinking && !flashing ? PLAYER.invulnerableBlinkAlpha : 1;
 
   // Landing squash, applied around the feet so the character stays planted
@@ -269,20 +275,40 @@ export function drawPlayer(ctx, player) {
   // stretching with a landing would just look broken.
   ctx.save();
   applyLandSquash(ctx, player);
-  const x = Math.round(player.x);
-  const y = Math.round(player.y);
-  ctx.fillStyle = baseColor;
-  ctx.fillRect(x, y, player.width, player.height);
-  // See PLAYER.outlineColor in config.js: the rim is what keeps the
-  // player findable across every background section.
-  ctx.strokeStyle = PLAYER.outlineColor;
-  ctx.lineWidth = PLAYER.outlineWidth;
-  ctx.strokeRect(x, y, player.width, player.height);
-  if (player.outfit === 'studentmossa') drawStudentmossa(ctx, player);
+  const image = getImage(PLAYER_SPRITES[player.outfit] || PLAYER_SPRITES.none);
+  if (image) drawPlayerSprite(ctx, player, image, flashing);
+  else drawPlayerFallback(ctx, player, flashing);
   ctx.restore();
   ctx.globalAlpha = 1;
 
   drawBarks(ctx, player);
+}
+
+function drawPlayerSprite(ctx, player, image, flashing) {
+  const feetCenterX = Math.round(player.x + player.width / 2);
+  const feetY = Math.round(player.y + player.height);
+  ctx.translate(feetCenterX, feetY);
+  ctx.scale(player.facing, 1);
+  ctx.drawImage(image, -SPRITE_FOOT_X, -SPRITE_FOOT_Y);
+  // Preserve the existing hit-flash feedback without replacing the sprite
+  // with its former block: a second screen-blended draw brightens only the
+  // non-transparent character pixels.
+  if (flashing) {
+    ctx.globalCompositeOperation = 'screen';
+    ctx.drawImage(image, -SPRITE_FOOT_X, -SPRITE_FOOT_Y);
+  }
+}
+
+// A failed image load must not make the player invisible. This is only a
+// resilience fallback; a normal successful load always draws the real art.
+function drawPlayerFallback(ctx, player, flashing) {
+  const x = Math.round(player.x);
+  const y = Math.round(player.y);
+  ctx.fillStyle = flashing ? DAMAGE_FLASH.playerColor : PICKUP.colors[player.outfit] || PLAYER.color;
+  ctx.fillRect(x, y, player.width, player.height);
+  ctx.strokeStyle = PLAYER.outlineColor;
+  ctx.lineWidth = PLAYER.outlineWidth;
+  ctx.strokeRect(x, y, player.width, player.height);
 }
 
 function applyLandSquash(ctx, player) {
@@ -298,37 +324,18 @@ function applyLandSquash(ctx, player) {
   ctx.translate(-centerX, -feetY);
 }
 
-// The studentmössa overlay (AGENTS.md §6: drawn on the base character,
-// never a second animation set). Obvious placeholder art: a white cap, a
-// dark brim and a yellow tassel, all oversized so nobody mistakes it for
-// finished. When the real overlay lands (task 6.4) the body of this
-// function becomes one drawImage call at the same offset:
-//
-//   ctx.drawImage(image, x, player.y + STUDENTMOSSA_OVERLAY.offsetY);
-function drawStudentmossa(ctx, player) {
-  const o = STUDENTMOSSA_OVERLAY;
-  const centerX = Math.round(player.x + player.width / 2);
-  const top = Math.round(player.y + o.offsetY);
-
-  ctx.fillStyle = o.brimColor;
-  ctx.fillRect(centerX - o.brimWidth / 2, top + o.capHeight, o.brimWidth, o.brimHeight);
-  ctx.fillStyle = o.color;
-  ctx.fillRect(centerX - o.capWidth / 2, top, o.capWidth, o.capHeight);
-  ctx.fillStyle = o.tasselColor;
-  ctx.fillRect(centerX + o.capWidth / 2 - o.tasselWidth, top, o.tasselWidth, o.tasselLength);
-}
-
 // Floats upward and fades over its lifetime; drawn above the player, never
 // touching game state or input, so it can never pause anything (AGENTS.md §4).
 function drawBarks(ctx, player) {
   if (player.barks.length === 0) return;
   const centerX = Math.round(player.x + player.width / 2);
+  const visualTop = player.y + player.height - SPRITE_FOOT_Y + SPRITE_VISIBLE_TOP_Y;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
   ctx.font = BARK.font;
   for (const bark of player.barks) {
     const age = 1 - bark.timer / BARK.displayDuration; // 0 at spawn, 1 at expiry
-    const y = Math.round(player.y - BARK.offsetAboveHead - BARK.floatDistance * age);
+    const y = Math.round(visualTop - BARK.offsetAboveHead - BARK.floatDistance * age);
     ctx.globalAlpha = Math.max(0, 1 - age);
     ctx.fillStyle = BARK.color;
     ctx.fillText(bark.text, centerX, y);

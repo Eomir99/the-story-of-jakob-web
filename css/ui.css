@@ -105,23 +105,55 @@
   color: #f7f3e3;
 }
 
-/* Comic viewer (task 4.3). #comic-frame has no explicit size -- as a flex
-   child of .dom-screen it shrink-wraps to its image, which is capped to
-   the screen by max-width/max-height while keeping its own aspect ratio
-   (never cropped or stretched, panels vary in shape). That makes the
-   frame exactly the letterboxed image's box, so bubbles positioned as
-   percentages of the frame land on the artwork correctly at any scale. */
+/* Comic viewer (task 4.3; task 2, playtest round 2: panels stack instead
+   of replacing each other). #comic-screen itself does not scroll -- it
+   stays a plain full-cover box so .comic-hint, a direct child of it, can
+   sit fixed on screen the whole time. #comic-scroll is the one thing that
+   scrolls, and holds #comic-panel-list, a centred column that grows
+   downward as comics.js appends a frame per panel. */
+.comic-screen {
+  display: block; /* override .dom-screen's flex centring -- this screen scrolls a column instead */
+  padding: 0;
+}
+
+.comic-scroll {
+  position: absolute;
+  inset: 0;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+}
+
+.comic-panel-list {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2rem;
+  min-height: 100%;
+  box-sizing: border-box;
+  /* Bottom padding roomy enough that scrolling the last panel to the
+     middle of the viewport (comics.js's scrollIntoView) never leaves it
+     hidden under .comic-hint, and top padding so the first panel doesn't
+     start jammed against the screen edge. */
+  padding: 3rem 1rem 12rem;
+}
+
+/* Each panel's own frame. No explicit size -- it shrink-wraps to its
+   image, which is capped by max-width/max-height while keeping its own
+   aspect ratio (never cropped or stretched; panels vary in shape). That
+   makes the frame exactly the letterboxed image's box, so a panel's
+   bubbles, positioned as percentages of ITS frame, land on the artwork
+   correctly at any scale regardless of how tall neighbouring panels are. */
 .comic-frame {
   position: relative;
   max-width: 100%;
-  max-height: 100%;
+  max-height: 82vh; /* a single panel never eats the whole scrollable view */
   line-height: 0; /* no inline-image baseline gap under the frame */
 }
 
-#comic-panel-image {
+.comic-panel-image {
   display: block;
   max-width: 100%;
-  max-height: 100%;
+  max-height: 82vh;
   width: auto;
   height: auto;
 }
@@ -133,7 +165,9 @@
 }
 
 /* Small and out of the way -- without it a non-gamer sits looking at the
-   first panel wondering whether the game has frozen (PLAN.md 4.3). */
+   first panel wondering whether the game has frozen (PLAN.md 4.3). A
+   direct child of #comic-screen (not of #comic-scroll), so it stays put
+   on screen while the panel list underneath it scrolls. */
 .comic-hint {
   position: absolute;
   left: 50%;

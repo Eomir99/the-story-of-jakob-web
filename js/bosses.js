@@ -89,6 +89,19 @@ export function updateResearchGolem(boss, dt) {
   return [];
 }
 
+// Called once by game.js the instant the player crosses activationX (task
+// 1, config.js ACTIVATION note): starts the first wind-up immediately
+// instead of leaving boss.cycleTimer to run out a full cycleInterval from
+// scratch, which is what made the first attack of every fight land
+// several seconds later than it should have.
+export function activateResearchGolem(boss) {
+  boss.active = true;
+  const patternId = RESEARCH_GOLEM.phaseA.cyclePatterns[0];
+  boss.cycleIndex = 1;
+  const pattern = RESEARCH_GOLEM.patterns[patternId];
+  boss.telegraph = { patternId, timer: pattern.telegraphDuration, duration: pattern.telegraphDuration };
+}
+
 // Fires one of the shared attack patterns (AGENTS.md §5: projectile type,
 // angle, speed, delay, telegraph duration, repeat count, all as data).
 // Takes the patterns map and contactDamage explicitly so Graduation can
@@ -208,6 +221,15 @@ export function createGraduationBoss(x, y, activationX) {
     cycleIndex: 0,
     telegraph: null,
   };
+}
+
+// Same fix as activateResearchGolem above, for the same reason.
+export function activateGraduationBoss(boss) {
+  boss.active = true;
+  const patternId = GRADUATION.stage1.cyclePatterns[0];
+  boss.cycleIndex = 1;
+  const pattern = RESEARCH_GOLEM.patterns[patternId];
+  boss.telegraph = { patternId, timer: pattern.telegraphDuration, duration: pattern.telegraphDuration };
 }
 
 export function updateGraduationBoss(boss, dt) {
