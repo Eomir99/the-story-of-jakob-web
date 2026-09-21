@@ -21,6 +21,9 @@ export const MANIFEST = [
   { path: 'assets/player/studentmossa.png' },
   { path: 'assets/player/suit.png' },
   { path: 'assets/player/armour.png' },
+  { path: 'assets/player/base-animation.png' },
+  { path: 'assets/player/studentmossa-animation.png' },
+  { path: 'assets/player/suit-animation.png' },
 ];
 
 // Loaded images, keyed by the same path used in MANIFEST -- background.js

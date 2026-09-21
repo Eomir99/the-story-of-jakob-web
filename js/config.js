@@ -319,6 +319,15 @@ export const PLAYER = {
   invulnerabilityDuration: 1.2, // s, after taking damage
   respawnDelay: 0.4, // s before control returns after death
 
+  // Authored player sprite timing. All three animated appearances share
+  // the same ten-frame layout; armour remains the existing static sprite
+  // because it is collected immediately before the final comic.
+  animation: {
+    idleFrameDuration: 0.36, // s per frame
+    runFrameDuration: 0.1, // s per frame
+    shootFrameDuration: 0.08, // s per frame
+  },
+
   // Coyote time: how long after walking off a ledge a jump still works.
   // Without it a jump pressed a frame or two late simply does nothing and
   // reads as the game cheating -- the single most common reason a

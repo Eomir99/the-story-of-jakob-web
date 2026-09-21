@@ -12,6 +12,12 @@ const PLAYER_SPRITES = {
   armour: 'assets/player/armour.png',
 };
 
+const PLAYER_ANIMATION_SHEETS = {
+  none: 'assets/player/base-animation.png',
+  studentmossa: 'assets/player/studentmossa-animation.png',
+  suit: 'assets/player/suit-animation.png',
+};
+
 // Every prepared variant keeps the same 128px canvas and foot pivot. These
 // are authored asset coordinates, not gameplay tuning: anchoring this point
 // to the existing hitbox's bottom-centre keeps every outfit planted without
@@ -19,6 +25,8 @@ const PLAYER_SPRITES = {
 const SPRITE_FOOT_X = 66;
 const SPRITE_FOOT_Y = 120;
 const SPRITE_VISIBLE_TOP_Y = 14;
+const SPRITE_FRAME_SIZE = 128;
+const SPRITE_SHEET_COLUMNS = 5;
 
 export function createPlayer(x, y) {
   return {
@@ -46,6 +54,7 @@ export function createPlayer(x, y) {
     // invulnerability blink that follows it.
     hitFlashTimer: 0,
     fireCooldown: 0,
+    animationTime: 0,
     hp: PLAYER.maxHp,
     invulnerableFor: 0,
     dead: false,
@@ -102,6 +111,8 @@ export function updatePlayer(player, dt, spawnPoint, platforms = []) {
     if (player.respawnTimer <= 0) respawnPlayer(player, spawnPoint);
     return [];
   }
+
+  player.animationTime += dt;
 
   const left = isActionDown('left');
   const right = isActionDown('right');
@@ -276,7 +287,11 @@ export function drawPlayer(ctx, player) {
   ctx.save();
   applyLandSquash(ctx, player);
   const image = getImage(PLAYER_SPRITES[player.outfit] || PLAYER_SPRITES.none);
-  if (image) drawPlayerSprite(ctx, player, image, flashing);
+  const animationPath = PLAYER_ANIMATION_SHEETS[player.outfit];
+  const animationImage = animationPath ? getImage(animationPath) : undefined;
+  if (animationImage) {
+    drawPlayerSprite(ctx, player, animationImage, flashing, getAnimationFrame(player));
+  } else if (image) drawPlayerSprite(ctx, player, image, flashing);
   else drawPlayerFallback(ctx, player, flashing);
   ctx.restore();
   ctx.globalAlpha = 1;
@@ -284,19 +299,54 @@ export function drawPlayer(ctx, player) {
   drawBarks(ctx, player);
 }
 
-function drawPlayerSprite(ctx, player, image, flashing) {
+function getAnimationFrame(player) {
+  if (player.hitFlashTimer > 0) return 9;
+
+  const shootElapsed = PROJECTILE.fireCooldown - player.fireCooldown;
+  const shootDuration = PLAYER.animation.shootFrameDuration * 2;
+  if (player.fireCooldown > 0 && shootElapsed >= 0 && shootElapsed < shootDuration) {
+    return 7 + Math.min(1, Math.floor(shootElapsed / PLAYER.animation.shootFrameDuration));
+  }
+  if (!player.onGround) return 6;
+  if (Math.abs(player.vx) > 0) {
+    return 2 + Math.floor(player.animationTime / PLAYER.animation.runFrameDuration) % 4;
+  }
+  return Math.floor(player.animationTime / PLAYER.animation.idleFrameDuration) % 2;
+}
+
+function drawPlayerSprite(ctx, player, image, flashing, frame = null) {
   const feetCenterX = Math.round(player.x + player.width / 2);
   const feetY = Math.round(player.y + player.height);
   ctx.translate(feetCenterX, feetY);
   ctx.scale(player.facing, 1);
-  ctx.drawImage(image, -SPRITE_FOOT_X, -SPRITE_FOOT_Y);
+  drawSpriteImage(ctx, image, frame);
   // Preserve the existing hit-flash feedback without replacing the sprite
   // with its former block: a second screen-blended draw brightens only the
   // non-transparent character pixels.
   if (flashing) {
     ctx.globalCompositeOperation = 'screen';
-    ctx.drawImage(image, -SPRITE_FOOT_X, -SPRITE_FOOT_Y);
+    drawSpriteImage(ctx, image, frame);
   }
+}
+
+function drawSpriteImage(ctx, image, frame) {
+  if (frame === null) {
+    ctx.drawImage(image, -SPRITE_FOOT_X, -SPRITE_FOOT_Y);
+    return;
+  }
+  const sourceX = (frame % SPRITE_SHEET_COLUMNS) * SPRITE_FRAME_SIZE;
+  const sourceY = Math.floor(frame / SPRITE_SHEET_COLUMNS) * SPRITE_FRAME_SIZE;
+  ctx.drawImage(
+    image,
+    sourceX,
+    sourceY,
+    SPRITE_FRAME_SIZE,
+    SPRITE_FRAME_SIZE,
+    -SPRITE_FOOT_X,
+    -SPRITE_FOOT_Y,
+    SPRITE_FRAME_SIZE,
+    SPRITE_FRAME_SIZE,
+  );
 }
 
 // A failed image load must not make the player invisible. This is only a
