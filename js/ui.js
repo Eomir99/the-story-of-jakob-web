@@ -6,6 +6,7 @@
 import { startFromTitle, subscribeToStateChange, subscribeToTitleCard, subscribeToResumeHint, STATE } from './game.js';
 import { loadAssets } from './assets.js';
 import { initComicViewer, showComic, hideComic } from './comics.js';
+import { subscribeToReceptionChoice, chooseReceptionOption, subscribeToReceptionRetry, requestReceptionRetry } from './reception.js';
 
 export function initUI() {
   initTitleScreen();
@@ -13,6 +14,7 @@ export function initUI() {
   initPersistentControls();
   initStudentmossaCard();
   initResumeHint();
+  initReceptionChoice();
 
   const persistentControls = document.querySelector('#persistent-controls');
 
@@ -62,6 +64,36 @@ function initResumeHint() {
 
   subscribeToResumeHint((visible) => {
     hint.hidden = !visible;
+  });
+}
+
+// The Clinic reception's "Try again / Skip this round" choice
+// (reception.js). reception.js decides when it shows and holds the game
+// still meanwhile; this only shows the element and hands the answer back.
+function initReceptionChoice() {
+  const panel = document.querySelector('#reception-choice');
+  const retry = document.querySelector('#reception-retry');
+  const skip = document.querySelector('#reception-skip');
+  if (!panel || !retry || !skip) return;
+
+  subscribeToReceptionChoice((visible) => {
+    panel.hidden = !visible;
+    if (visible) retry.focus();
+  });
+  retry.addEventListener('click', () => chooseReceptionOption('retry'));
+  skip.addEventListener('click', () => chooseReceptionOption('skip'));
+
+  // Round 3's optional Retry, offered after it has been failed.
+  const retryFinal = document.querySelector('#reception-retry-final');
+  if (!retryFinal) return;
+  subscribeToReceptionRetry((visible) => {
+    retryFinal.hidden = !visible;
+  });
+  retryFinal.addEventListener('click', () => {
+    requestReceptionRetry();
+    // Hand focus back to the page, so Space/arrows reach the game rather
+    // than "pressing" this button again.
+    retryFinal.blur();
   });
 }
 

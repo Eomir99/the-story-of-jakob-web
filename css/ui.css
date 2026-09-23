@@ -382,3 +382,87 @@
   font-size: 1.05rem;
   color: rgba(247, 243, 227, 0.78);
 }
+
+/* ---------------------------------------------------------------------
+   The Clinic reception's "Try again / Skip this round" choice
+   (reception.js). A small card over the top of the frozen arena, not a
+   full-screen cover: the round the player just failed stays visible
+   behind it.
+   --------------------------------------------------------------------- */
+
+.reception-choice {
+  position: absolute;
+  top: 34%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  padding: 1.1rem 1.6rem 1.3rem;
+  background: rgba(13, 17, 23, 0.88);
+  border: 2px solid #1f4e6b;
+  border-radius: 0.8rem;
+  color: #f7f3e3;
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  text-align: center;
+}
+
+.reception-choice[hidden] {
+  display: none;
+}
+
+.reception-choice-text {
+  margin: 0 0 0.9rem;
+  font-size: 1.1rem;
+}
+
+.reception-choice-actions {
+  display: flex;
+  gap: 0.8rem;
+  justify-content: center;
+}
+
+.reception-choice-button {
+  font: inherit;
+  font-size: 1rem;
+  padding: 0.5rem 1.2rem;
+  border: none;
+  border-radius: 0.4rem;
+  cursor: pointer;
+  background: #4a5568;
+  color: #f7f3e3;
+}
+
+.reception-choice-button:first-child {
+  background: #f6c453;
+  color: #1b2333;
+}
+
+.reception-choice-button:hover,
+.reception-choice-button:focus-visible {
+  filter: brightness(1.12);
+}
+
+/* Round 3's optional Retry (reception.js): bottom centre, small and quiet,
+   in the same visual family as the persistent controls. */
+.reception-retry-final {
+  position: absolute;
+  left: 50%;
+  bottom: 0.6rem;
+  transform: translateX(-50%);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font-size: 0.8rem;
+  color: rgba(247, 243, 227, 0.8);
+  background: rgba(13, 17, 23, 0.55);
+  border: 1px solid rgba(247, 243, 227, 0.25);
+  border-radius: 999px;
+  padding: 0.35rem 0.9rem;
+  cursor: pointer;
+}
+
+.reception-retry-final[hidden] {
+  display: none;
+}
+
+.reception-retry-final:hover,
+.reception-retry-final:focus-visible {
+  color: #f7f3e3;
+  background: rgba(13, 17, 23, 0.8);
+}

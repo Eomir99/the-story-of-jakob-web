@@ -30,7 +30,7 @@
 // together, then a quiet stretch, then one on a platform) rather than
 // landing on a steady rhythm, which would read as filler.
 
-import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, STAIRCASE, BOSS_APPROACH } from './config.js';
+import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, LANDMARK, PICKUP, PLATFORM, STAIRCASE, BOSS_APPROACH } from './config.js';
 
 const SPAWN_X = 120;
 
@@ -43,11 +43,9 @@ const CLEARANCE_LOW = 90;
 const CLEARANCE_HIGH = 130;
 const platformTop = (clearance) => WORLD.groundY - clearance;
 
-// Boss arenas: fixed width from activation line to the boss, sized for the
-// fight (dodge room), not derived from a travel-time target. Both stay
-// flat (task C) -- no platform is ever placed between an arena's
-// activation entry and its own comic-trigger/checkpoint/boss entries.
-const ARENA_WIDTH = 600;
+// Boss arenas are sized from their own art (door/portal to where the boss
+// stands), not from a travel-time target. Both stay flat (task C) -- no
+// platform is ever placed inside either.
 
 // --- Lund (12,600px: SPAWN_X to the end of the utspring) ------------------
 // The maths book (the enemy-behaviours brief): one behaviour, placed three
@@ -114,6 +112,20 @@ const STAIR_TOP_Y = WORLD.groundY - STAIR_TOP_CLEARANCE;
 // staircase is measured backwards from there, so the section still runs
 // its full 12,600px.
 const UTSPRING_END_X = SPAWN_X + 12600; // 12720
+
+// Background-transition repair: the Lund-utspring -> Göteborg-city section
+// boundary used to sit at UTSPRING_END_X itself. BACKGROUND.blendBandWidth
+// (config.js, 400px centred on the boundary) then straddled the exact point
+// where the auto-run stops and the studentmössa celebration (flash, card
+// hold, card fade -- STAIRCASE below) plays out with the camera sitting
+// still: Göteborg sat fading in at a constant ~50% blend for the whole
+// celebration, and had already started fading in during the final ~200px of
+// the descent itself. Moving the boundary a clear buffer past UTSPRING_END_X
+// means the blend band cannot be reached until the player has walked forward
+// after control returns -- the celebration and the run that ends it stay
+// visually Lund/Polhem throughout, and Göteborg only starts revealing itself
+// once the player is moving through it again.
+const LUND_GOTEBORG_BACKGROUND_X = UTSPRING_END_X + 600; // 13320
 const STAIRCASE_START_X = UTSPRING_END_X - UTSPRING_RUN_LENGTH; // 11370 -- the handover line
 const CHECKPOINT_AT_STAIRCASE_TOP_X = STAIRCASE_START_X - 1; // 11369 -- see the note above
 const STAIRCASE_ASCENT_X = STAIRCASE_START_X - STAIR_ASCENT_STEPS * PLATFORM.width; // 10930
@@ -155,7 +167,7 @@ const PLATFORM_D_X = UTSPRING_END_X + 1200; // 13920
 const PLATFORM_E_X = PLATFORM_D_X + 900; // 14820 -- clustered with D
 const PLATFORM_F_X = PLATFORM_E_X + 4200; // 19020 -- quiet stretch, was 9,500
 const PLATFORM_G_X = PLATFORM_F_X + 900; // 19920 -- clustered with F
-const GOLEM_COMIC_X = PLATFORM_G_X + 2000; // 21920 -- background boundary only now (see SECTION_HANDELS_X)
+const GOLEM_COMIC_X = PLATFORM_G_X + 2000; // 21920 -- comic-trigger spacing only; the background boundary sits at GOLEM_ACTIVATION_X (see SECTION_HANDELS_X)
 const GOLEM_ACTIVATION_X = GOLEM_COMIC_X + 500; // 22420 = UTSPRING_END_X + 9,700 (9,200 section + 500 comic-to-activation) ✓
 // Also the Research Golem venue's own entry line (RESEARCH_GOLEM_ENTRY_X
 // below): the line the scripted approach walk ends exactly on, where the
@@ -181,8 +193,7 @@ const RESEARCH_GOLEM_TAKEOVER_X = GOLEM_ACTIVATION_X - PLAYER.moveSpeed * BOSS_A
 // generic tiled interior. "Do not treat earlier coordinates for the old
 // arena layout as sacred" (task brief) -- BOSS_X/GOLEM_EXIT_X/SUIT_X below
 // are measured against the art's own door/pedestal positions, not the old
-// ARENA_WIDTH=600 placeholder gap (Graduation, further down, still uses
-// ARENA_WIDTH -- its own arena art doesn't exist yet).
+// ARENA_WIDTH=600 placeholder gap.
 //
 // Local x positions, measured on the delivered 2172×724 v2 image: left
 // door 165, centre pedestal 1086, right door 1980. ARENA_IMAGE_X is the
@@ -255,13 +266,25 @@ const FACADE_EXIT_X = SECTION_HAGA_X - FACADE_SIDE_DOOR_LOCAL_X; // post-boss pl
 // player the rest of the way, ending just past the door.
 const RESEARCH_GOLEM_EXIT_WALK_TRIGGER_X = RESEARCH_GOLEM_EXIT_X - RESEARCH_GOLEM_EXIT.triggerMarginBeforeDoor;
 
-// --- Clinic: reception (~2,048px) --------------------------------------
+// --- Clinic: reception (~2,400px) --------------------------------------
+// The reception encounter (reception.js, PROTOTYPE) is Clinic's one beat,
+// replacing the Endless Inbox placement that used to stand here. The
+// section is the arena plus a short lead-in and run-out, so resizing the
+// arena resizes the section and pushes everything downstream along.
 const SECTION_CLINIC_X = SECTION_HAGA_X + HAGA_LENGTH; // 26283
-const CLINIC_LENGTH = 2048;
-// The Endless Inbox (AGENTS.md §3, admin summer job) is Clinic's one beat;
-// centred in the section with room either side for its activation lead
-// distance (config.js ACTIVATION.enemyLeadDistance).
-const CLINIC_INBOX_X = SECTION_CLINIC_X + 1024; // 27307
+const RECEPTION_LEAD_IN = 200; // px of section before the arena's left edge
+const RECEPTION_ARENA_WIDTH = 1700; // px -- the camera zooms to fit exactly this
+const RECEPTION_RUN_OUT = 500; // px after the arena before USA begins
+const RECEPTION_ARENA_LEFT_X = SECTION_CLINIC_X + RECEPTION_LEAD_IN; // 26483
+const RECEPTION_ARENA_RIGHT_X = RECEPTION_ARENA_LEFT_X + RECEPTION_ARENA_WIDTH; // 28183
+const CLINIC_LENGTH = RECEPTION_LEAD_IN + RECEPTION_ARENA_WIDTH + RECEPTION_RUN_OUT; // 2400
+// The red-cross sign stands just inside the arena's left edge; walking a
+// little past it is what takes control (the sketch's "moves a bit in front
+// of the sign"). The desk stands at the far right, its front edge being the
+// arena's right wall until the encounter is done.
+const RECEPTION_SIGN_X = RECEPTION_ARENA_LEFT_X + 70;
+const RECEPTION_TRIGGER_X = RECEPTION_ARENA_LEFT_X + 200;
+const RECEPTION_DESK_X = RECEPTION_ARENA_RIGHT_X - 60 - 180; // 180 = config.js RECEPTION.desk.width
 
 // --- USA: the stadium (~7,100px) ----------------------------------------
 const SECTION_USA_X = SECTION_CLINIC_X + CLINIC_LENGTH; // 28331
@@ -274,28 +297,69 @@ const PLATFORM_J_X = SECTION_USA_X + 1200; // 29531
 const USA_HELMET_X = SECTION_USA_X + 3200; // 31531
 const PLATFORM_K_X = USA_HELMET_X + 1600; // 33131
 const PLATFORM_L_X = PLATFORM_K_X + 900; // 34031 -- clustered with K
-const GRADUATION_COMIC_X = PLATFORM_L_X + 1400; // 35431 -- background boundary only now (see SECTION_GU_X)
-const GRADUATION_ACTIVATION_X = GRADUATION_COMIC_X + 500; // 35931
+const SECTION_PORTAL_HAGA_X = PLATFORM_L_X + 1400; // 35431 -- where USA ends
 
-// Same boss-approach trick as the Golem's, above.
-const GRADUATION_APPROACH_X = GRADUATION_ACTIVATION_X - PLAYER.moveSpeed * BOSS_APPROACH.walkDuration; // 35355
+// --- Haga: the Graduation portal lead-in (~1,500px) ------------------------
+// A short Göteborg Haga street that exists only to ground the portal in the
+// world before the Graduation arena: no platforms, no enemies. Its length
+// is just enough for the Haga look to finish fading in
+// (BACKGROUND.blendBandWidth) and be walked through for a moment before the
+// portal comes into view.
+const PORTAL_LEAD_IN = 1500; // px from USA's end to the portal's opening
+const PORTAL_OPENING_X = SECTION_PORTAL_HAGA_X + PORTAL_LEAD_IN; // 36931 -- world x of the portal's opening centre
+const PORTAL_OPENING_LOCAL_X = 220; // the opening's centre in the portal art (config.js LANDMARK.types 'graduation-portal')
+const PORTAL_WIDTH = LANDMARK.types['graduation-portal'].width; // 440
+const PORTAL_X = PORTAL_OPENING_X - PORTAL_OPENING_LOCAL_X; // 36711 -- the art's left edge
+
+// The line the scripted walk ends on, the comic opens on and the arena
+// starts from: Jakob standing centred in the portal's opening. Same role as
+// GOLEM_ACTIVATION_X for the Research Golem -- the exterior (Haga + portal)
+// is drawn left of it, the arena from it onwards (game.js
+// graduationInterior()).
+const GRADUATION_ACTIVATION_X = PORTAL_OPENING_X - PLAYER.width / 2; // 36907
+
+// Same boss-approach trick as the Golem's (RESEARCH_GOLEM_TAKEOVER_X), with
+// Graduation's own longer walk, so control is taken just as the portal
+// starts to come into view.
+const GRADUATION_TAKEOVER_X = GRADUATION_ACTIVATION_X - PLAYER.moveSpeed * GRADUATION_ENTRANCE.walkDuration; // 36187
+
+// The reveal framing: the locked shot ends GRADUATION_ENTRANCE.revealMarginRight
+// past the portal's right edge -- only the area up to and around the
+// portal -- and holds through the thoughts and the walk.
+const GRADUATION_REVEAL_CAMERA_X = PORTAL_X + PORTAL_WIDTH + GRADUATION_ENTRANCE.revealMarginRight - CANVAS.width; // 35931
 
 // --- Graduation arena -------------------------------------------------------
-// Same note as the Research Golem arena above: internal geometry
-// (activation line to the boss, boss to the pickup/final comic) is
-// unchanged, only its start position moved earlier. Per the new level flow,
-// this arena goes on to use the same boss-specific world-space scenery
-// approach as the Research Golem's rather than ordinary parallax strips
-// (AGENTS.md §6, BACKGROUND-ASSET-SPEC.md) -- that art and its exact
-// door/boss placement are future work, not this task.
-const GRADUATION_X = GRADUATION_ACTIVATION_X + ARENA_WIDTH; // 36531
-const ARMOUR_X = GRADUATION_X + GRADUATION.width + 200; // 36871
-const FINAL_COMIC_X = GRADUATION_X + GRADUATION.width + 300; // 36971
+// The arena is the `graduation-arena` artwork (boss-2-arena-v1.png), one
+// image placed so its own painted portal lines up with the Haga portal's
+// opening -- the player steps in through one and out of the other. Like
+// the Research Golem venue, exterior and interior share world x but are
+// never drawn at the same time. Local x positions measured on the
+// 1831px-wide art: portal opening 318; the boss stands at 1250, so a shot
+// fired from the portal reaches him (PROJECTILE.speed * lifetime = 990px;
+// this leaves ~910px, about the Research Golem's own entrance-to-boss
+// distance). The armour and the final comic sit between him and the art's
+// right edge -- the arena camera frames the whole image, so all of it stays
+// in shot.
+const GRADUATION_ARENA_PORTAL_LOCAL_X = 318;
+const GRADUATION_ARENA_BOSS_LOCAL_X = 1250;
+const GRADUATION_ARENA_WIDTH = LANDMARK.types['graduation-arena'].width; // 1831
+const GRADUATION_ARENA_IMAGE_X = PORTAL_OPENING_X - GRADUATION_ARENA_PORTAL_LOCAL_X; // 36613
+// The world rectangle the zoomed-out arena camera frames (game.js
+// graduationArenaFraming): the art's full width, from the art's top edge.
+const GRADUATION_ARENA_FRAME = {
+  left: GRADUATION_ARENA_IMAGE_X,
+  right: GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_WIDTH,
+  top: WORLD.groundY - LANDMARK.types['graduation-arena'].baselineY,
+};
+
+const GRADUATION_X = GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_BOSS_LOCAL_X; // 37863
+const ARMOUR_X = GRADUATION_X + GRADUATION.width + 80; // 38083
+const FINAL_COMIC_X = ARMOUR_X + 100; // 38183 -- local 1570, well inside the frame
 
 // --- Background sections ----------------------------------------------------
-// Nine sections, in level order (level-compression pass: was eight, split by
+// Ten sections, in level order (level-compression pass: was eight, split by
 // inserting the new short Haga exterior after the Research Golem arena --
-// NEW LEVEL FLOW). The order is deliberate and is NOT chronological: the
+// NEW LEVEL FLOW -- then the short Haga portal lead-in before Graduation). The order is deliberate and is NOT chronological: the
 // Research Golem sits earlier than the events it follows in real life,
 // because putting it immediately before the Graduation boss would stack two
 // bosses back to back with almost no level between them. Pacing wins over
@@ -314,15 +378,16 @@ const FINAL_COMIC_X = GRADUATION_X + GRADUATION.width + 300; // 36971
 //   #  section                        start    length   at 360 px/s
 //   1  Lund -- town                       0    4,200       11.7 s
 //   2  Polhem -- the school           4,200    5,730       15.9 s
-//   3  Lund -- the utspring           9,930    2,790        7.8 s
-//   4  Göteborg -- the city          12,720    9,200       25.6 s
-//   5  Handels -- Golem arena        21,920    2,315        6.4 s
+//   3  Lund -- the utspring           9,930    3,390        9.4 s
+//   4  Göteborg -- the city          13,320    9,100       25.3 s
+//   5  Handels -- Golem arena        22,420    1,815        5.0 s
 //   6  Haga -- Göteborg exterior     24,235    2,048        5.7 s
-//   7  Clinic -- reception           26,283    2,048        5.7 s
+//   7  Clinic -- reception           26,283    2,400        6.7 s (+ the encounter itself)
 //   8  USA -- the stadium            28,331    7,100       19.7 s
-//   9  GU -- Graduation arena        35,431    2,040        5.7 s
+//   9  Haga -- portal lead-in        35,431    1,476        4.1 s (scripted from 36,187)
+//  10  GU -- Graduation arena        36,907    1,776        4.9 s
 //                                            -------      -------
-//                                            37,471      103.5 s
+//                                            38,683      107.5 s
 //
 // (Boss-fight duration is not distance-based and isn't part of the "at
 // 360 px/s" column above; the Handels and GU rows are their arenas' own
@@ -331,12 +396,30 @@ const FINAL_COMIC_X = GRADUATION_X + GRADUATION.width + 300; // 36971
 // line -- see the render-state repair note above GOLEM_ACTIVATION_X.)
 const SECTION_POLHEM_X = 4200;
 const SECTION_LUND_RETURN_X = STAIRCASE_ASCENT_X - 1000; // 9930
-// UTSPRING_END_X (12720) starts Göteborg -- the backdrop still swaps
-// exactly where the studentmössa is earned.
-const SECTION_HANDELS_X = GOLEM_COMIC_X; // 21920 -- the interior opens mid-approach, just before the comic
+// Göteborg's backdrop starts at LUND_GOTEBORG_BACKGROUND_X (13320), a buffer
+// past UTSPRING_END_X (12720) -- see that constant's own note above for why
+// this is deliberately not the same line the studentmössa run/celebration
+// ends on.
+//
+// Background-transition repair: this used to be GOLEM_COMIC_X (21920), which
+// put the boundary 500px before GOLEM_ACTIVATION_X -- i.e. still in the
+// middle of the scripted approach (reveal/react/walk/comic), all of which
+// happens outside the venue (researchGolemInterior() is false throughout).
+// The blend band therefore faded the real Göteborg skyline out into
+// handels-interior's flat fallback colour while the façade was still being
+// presented, leaving a visible void beside it. Moving the boundary to
+// GOLEM_ACTIVATION_X -- the exact x researchGolemInterior() itself uses --
+// means the outdoor Göteborg background (with its real far/mid skyline)
+// now covers the entire approach, reveal and comic, and only gives way to
+// the enclosed interior look at the same instant the venue's own explicit
+// interior state turns true.
+const SECTION_HANDELS_X = GOLEM_ACTIVATION_X; // 22420 -- matches researchGolemInterior()'s own boundary
 // SECTION_HAGA_X, SECTION_CLINIC_X and SECTION_USA_X are defined above, next
 // to the entity chains they bound.
-const SECTION_GU_X = GRADUATION_COMIC_X; // 35431 -- same framing as Handels
+// Same reasoning as SECTION_HANDELS_X: the outdoor Haga look covers the
+// whole portal approach and only gives way at the instant the arena's own
+// interior state (game.js graduationInterior()) turns true.
+const SECTION_GU_X = GRADUATION_ACTIVATION_X; // 36907
 const LEVEL_END_X = FINAL_COMIC_X + 500; // 37471
 
 // Landmark placements. Parallax is per placement, not per landmark: how
@@ -364,12 +447,13 @@ export const LEVEL = [
   // data edit here; it is never a code edit.
   { type: 'background-section', name: 'Lund — town', xStart: 0, xEnd: SECTION_POLHEM_X, background: 'lund-town' },
   { type: 'background-section', name: 'Polhem — the school', xStart: SECTION_POLHEM_X, xEnd: SECTION_LUND_RETURN_X, background: 'polhem-school' },
-  { type: 'background-section', name: 'Lund — the utspring', xStart: SECTION_LUND_RETURN_X, xEnd: UTSPRING_END_X, background: 'lund-utspring' },
-  { type: 'background-section', name: 'Göteborg — the city', xStart: UTSPRING_END_X, xEnd: SECTION_HANDELS_X, background: 'goteborg-city' },
+  { type: 'background-section', name: 'Lund — the utspring', xStart: SECTION_LUND_RETURN_X, xEnd: LUND_GOTEBORG_BACKGROUND_X, background: 'lund-utspring' },
+  { type: 'background-section', name: 'Göteborg — the city', xStart: LUND_GOTEBORG_BACKGROUND_X, xEnd: SECTION_HANDELS_X, background: 'goteborg-city' },
   { type: 'background-section', name: 'Handels — Golem arena', xStart: SECTION_HANDELS_X, xEnd: SECTION_HAGA_X, background: 'handels-interior' },
   { type: 'background-section', name: 'Haga — Göteborg exterior', xStart: SECTION_HAGA_X, xEnd: SECTION_CLINIC_X, background: 'goteborg-haga' },
   { type: 'background-section', name: 'Clinic — reception', xStart: SECTION_CLINIC_X, xEnd: SECTION_USA_X, background: 'clinic-reception' },
-  { type: 'background-section', name: 'USA — the stadium', xStart: SECTION_USA_X, xEnd: SECTION_GU_X, background: 'usa-stadium' },
+  { type: 'background-section', name: 'USA — the stadium', xStart: SECTION_USA_X, xEnd: SECTION_PORTAL_HAGA_X, background: 'usa-stadium' },
+  { type: 'background-section', name: 'Haga — portal lead-in', xStart: SECTION_PORTAL_HAGA_X, xEnd: SECTION_GU_X, background: 'goteborg-haga-portal' },
   { type: 'background-section', name: 'GU — Graduation arena', xStart: SECTION_GU_X, xEnd: LEVEL_END_X, background: 'gu-ceremony' },
 
   // Landmarks: one-off background objects at a single x, each scrolling
@@ -401,6 +485,11 @@ export const LEVEL = [
   { type: 'landmark', landmark: 'research-golem-facade-entrance', x: FACADE_ENTRANCE_X, parallax: 1 },
   { type: 'landmark', landmark: 'research-golem-facade-exit', x: FACADE_EXIT_X, parallax: 1 },
   { type: 'landmark', landmark: 'research-golem-arena', x: ARENA_IMAGE_X, parallax: 1 },
+  // Graduation venue art: the portal outside, the arena inside. Same
+  // explicit-state rule as above -- game.js graduationInterior() decides
+  // which of the two is drawn.
+  { type: 'landmark', landmark: 'graduation-portal', x: PORTAL_X, parallax: 1 },
+  { type: 'landmark', landmark: 'graduation-arena', x: GRADUATION_ARENA_IMAGE_X, parallax: 1 },
 
   { type: 'player-spawn', x: SPAWN_X },
 
@@ -506,10 +595,8 @@ export const LEVEL = [
   // Story beat 5 (AGENTS.md §3): the camera-reveal repair task's scripted
   // sequence (game.js updateBossApproach) -- stop, camera reveal, Jakob's
   // reaction, walk to the door, comic, then BOSS 1. revealCameraX and
-  // reactBark are what tell updateBossApproach to run the REVEAL/REACT
-  // phases at all; Graduation's own entry below carries neither, so it
-  // keeps its older, simpler walk-then-beat flow unchanged (PLAN.md 6.8b:
-  // its venue art is future work, not this task).
+  // reactBark fill the REVEAL/REACT phases; Graduation's entry below runs
+  // the same phases with thought bubbles instead of a bark.
   {
     type: 'boss-approach',
     x: RESEARCH_GOLEM_TAKEOVER_X,
@@ -547,9 +634,80 @@ export const LEVEL = [
   { type: 'platform', x: PLATFORM_H_X, y: platformTop(CLEARANCE_HIGH) },
   { type: 'platform', x: PLATFORM_I_X, y: platformTop(CLEARANCE_LOW) },
 
-  // The Endless Inbox: can't be shot down, only gotten past (AGENTS.md
-  // §3 -- the admin summer job).
-  { type: 'enemy-inbox', x: CLINIC_INBOX_X },
+  // The Clinic reception encounter (reception.js, PROTOTYPE step 1: intro
+  // + Rounds 1-3). All positions below are measured from the arena's left
+  // edge -- dx along, clearance = height above the ground of the surface
+  // (0 = the ground itself). Platforms pop in when the round starts and
+  // stay; the player's max jump rise is ~150px, so each step up between
+  // neighbouring platforms stays under ~115px.
+  //
+  // round1Items appear ONE AT A TIME, in this order.
+  {
+    type: 'reception-encounter',
+    triggerX: RECEPTION_TRIGGER_X,
+    arenaLeftX: RECEPTION_ARENA_LEFT_X,
+    arenaRightX: RECEPTION_ARENA_RIGHT_X,
+    signX: RECEPTION_SIGN_X,
+    deskX: RECEPTION_DESK_X,
+    // Three tiers of blocks (~100, ~215, ~320 above the ground), centred
+    // between the sign (dx 70) and the desk (dx 1460) with roughly the
+    // same ~90px gap on each side. Nothing LOW sits over where Jakob gets
+    // control (dx ~200) -- only the middle tier, so he never starts with a
+    // block at head height. A fourth tier (~430) is an idea held back for
+    // the final round.
+    platforms: [
+      { dx: 185, clearance: 210 }, // G  middle, high over the start
+      { dx: 415, clearance: 100 }, // A  low
+      { dx: 435, clearance: 320 }, // E  top, over A -- reached from G
+      { dx: 675, clearance: 210 }, // B  middle -- reached from A or C
+      { dx: 905, clearance: 100 }, // C  low
+      { dx: 935, clearance: 320 }, // F  top, over C -- reached from B or D
+      { dx: 1145, clearance: 220 }, // D  middle -- reached from C
+    ],
+    round1Items: [
+      { dx: 525, clearance: 100 }, // on A
+      { dx: 785, clearance: 210 }, // up on B
+      { dx: 1415, clearance: 0 }, // down on the floor, right in front of the desk
+      { dx: 1045, clearance: 320 }, // all the way up on F
+    ],
+    // Round 2: four files (again one at a time), zig-zagging across the
+    // arena, while sorting these cards -- left to right as they sit in the
+    // tray -- into the matching boxes.
+    // Colours: 'green' | 'yellow' | 'red' (config.js RECEPTION.sorting).
+    round2Items: [
+      { dx: 545, clearance: 320 }, // up on E, top left
+      { dx: 1255, clearance: 220 }, // over on D, right
+      { dx: 295, clearance: 210 }, // back on G, far left
+      { dx: 1015, clearance: 100 }, // down on C, middle
+    ],
+    round2Cards: ['yellow', 'green', 'red', 'yellow', 'green'],
+    // Round 3, the overload. A fourth tier of blocks pops in (~430 up,
+    // each reached from a top-tier block beside it). Eight tasks in PAIRS:
+    // the first two appear together, the next two once both are done, and
+    // so on -- each pair split across the arena. `kind` is only what it
+    // looks like: 'file', 'complaint' or 'globe' (a non-EU patient). The
+    // cards come as one face-up DECK, listed top card first: only the top
+    // card can be moved.
+    round3Platforms: [
+      { dx: 660, clearance: 430 }, // H  between E and F
+      { dx: 1180, clearance: 430 }, // I  right of F
+    ],
+    round3Items: [
+      // pair 1
+      { dx: 1290, clearance: 430, kind: 'globe' }, // top of I, far right
+      { dx: 295, clearance: 210, kind: 'file' }, // G, far left
+      // pair 2
+      { dx: 770, clearance: 430, kind: 'complaint' }, // top of H, middle
+      { dx: 1415, clearance: 0, kind: 'file' }, // floor, in front of the desk
+      // pair 3
+      { dx: 525, clearance: 100, kind: 'file' }, // A, low left
+      { dx: 1045, clearance: 320, kind: 'complaint' }, // F, upper right
+      // pair 4
+      { dx: 545, clearance: 320, kind: 'globe' }, // E, upper left
+      { dx: 1255, clearance: 220, kind: 'file' }, // D, middle right
+    ],
+    round3Cards: ['green', 'red', 'red', 'yellow', 'green', 'yellow', 'red', 'green', 'yellow', 'red'], // top first
+  },
   { type: 'platform', x: PLATFORM_J_X, y: platformTop(CLEARANCE_HIGH) },
 
   // The football helmet (USA, exchange semester): idle, telegraph, charge,
@@ -561,13 +719,26 @@ export const LEVEL = [
   { type: 'platform', x: PLATFORM_K_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_L_X, y: platformTop(CLEARANCE_HIGH) },
 
-  // Story beat 9 (AGENTS.md §3): approach, then comic, then BOSS 2 -- same
-  // pattern as the golem's above.
-  { type: 'boss-approach', x: GRADUATION_APPROACH_X, comicId: 'pre-graduation', arenaEntranceX: GRADUATION_ACTIVATION_X, boss: 'graduation' },
-  // Ahead of Graduation, same reasoning as the checkpoint before the
-  // Research Golem (task 2.6), inside its arena's activation line (task B).
-  { type: 'checkpoint', x: GRADUATION_X - 100 },
-  { type: 'boss-graduation', x: GRADUATION_X, activationX: GRADUATION_ACTIVATION_X },
+  // Story beat 9 (AGENTS.md §3): the portal. Control is taken as it comes
+  // into view, the camera frames it, Jakob thinks, walks into it, comic,
+  // then BOSS 2 -- the Research Golem's pattern above, with thought
+  // bubbles (config.js GRADUATION_ENTRANCE) and its own walk length.
+  {
+    type: 'boss-approach',
+    x: GRADUATION_TAKEOVER_X,
+    comicId: 'pre-graduation',
+    arenaEntranceX: GRADUATION_ACTIVATION_X,
+    boss: 'graduation',
+    revealCameraX: GRADUATION_REVEAL_CAMERA_X,
+    thoughts: GRADUATION_ENTRANCE.thoughts,
+    walkDuration: GRADUATION_ENTRANCE.walkDuration,
+  },
+  // Same reasoning as the checkpoint on GOLEM_ACTIVATION_X: a respawn lands
+  // in the arena's own portal, never outside it.
+  { type: 'checkpoint', x: GRADUATION_ACTIVATION_X },
+  // arenaFrame: what the zoomed-out arena camera shows (see
+  // GRADUATION_ARENA_FRAME above).
+  { type: 'boss-graduation', x: GRADUATION_X, activationX: GRADUATION_ACTIVATION_X, arenaFrame: GRADUATION_ARENA_FRAME },
 
   // Picked up immediately before the final comic (AGENTS.md §3).
   { type: 'pickup', outfit: 'armour', x: ARMOUR_X },
@@ -596,3 +767,15 @@ export function entryY(entry) {
   if (entry.y !== undefined) return entry.y;
   return WORLD.groundY - ENTITY_HEIGHT[entry.type];
 }
+
+// Development shortcut, not a feature: opening the game with ?start=<name>
+// (e.g. index.html?start=clinic) drops the player at one of these x
+// positions with everything before it already done -- so an encounter can
+// be replayed without replaying the whole level up to it. Adding &round=N
+// (e.g. ?start=clinic&round=3) starts the Clinic reception at that round.
+// game.js applyDebugStart. Without the query parameter nothing here is used.
+export const DEBUG_START_X = {
+  clinic: SECTION_CLINIC_X - 150,
+  // The end of USA, just before the Haga portal lead-in.
+  graduation: SECTION_PORTAL_HAGA_X - 400,
+};

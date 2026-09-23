@@ -71,6 +71,9 @@ export function createPlayer(x, y) {
     // the game is playing itself.
     autoRun: null,
     invincible: false,
+    // The Clinic reception encounter (reception.js) turns the fire button
+    // off while it runs: its verbs are move, jump and (later) the mouse.
+    shootingDisabled: false,
     barks: [], // active kill barks (task 3.9): { text, timer }
     barkCounts: {}, // per-enemy-type kill count, so lines cycle instead of repeating
   };
@@ -116,7 +119,7 @@ export function updatePlayer(player, dt, spawnPoint, platforms = []) {
 
   const left = isActionDown('left');
   const right = isActionDown('right');
-  const shooting = isActionDown('shoot');
+  const shooting = isActionDown('shoot') && !player.shootingDisabled;
 
   player.vx = 0;
   if (left && !right) player.vx = -PLAYER.moveSpeed;
@@ -304,14 +307,48 @@ function getAnimationFrame(player) {
 
   const shootElapsed = PROJECTILE.fireCooldown - player.fireCooldown;
   const shootDuration = PLAYER.animation.shootFrameDuration * 2;
-  if (player.fireCooldown > 0 && shootElapsed >= 0 && shootElapsed < shootDuration) {
+  const shooting = player.fireCooldown > 0 && shootElapsed >= 0 && shootElapsed < shootDuration;
+  const running = player.onGround && Math.abs(player.vx) > 0;
+
+  // Run-and-gun: firing while actually running reads as its own cycle
+  // rather than the standing shot pasted over a moving character. Stepped
+  // by the run's own clock and cadence, so the legs carry straight on
+  // through the switch -- only the arms change.
+  //
+  // No outfit check: every animated outfit is delivered as one complete
+  // eighteen-pose sheet, so they all carry these cells. The armour has no
+  // animation sheet at all and never reaches this function.
+  //
+  // Held for the WHOLE fire cycle (fireCooldown), not just the two shoot
+  // frames the standing pose uses. The standing shot can flick in and out
+  // because it looks nothing like the run it interrupts -- it reads as
+  // "he stopped to fire". These two cycles are nearly identical apart
+  // from the arms, so alternating between them every 0.28s just looked
+  // like both animations playing at once. Holding fire now keeps one
+  // continuous cycle, and releasing it falls back after the last shot's
+  // cooldown.
+  if (player.fireCooldown > 0 && running) {
+    return runCycleFrame(player, PLAYER.animation.runGunFrames);
+  }
+  if (shooting) {
     return 7 + Math.min(1, Math.floor(shootElapsed / PLAYER.animation.shootFrameDuration));
   }
   if (!player.onGround) return 6;
-  if (Math.abs(player.vx) > 0) {
-    return 2 + Math.floor(player.animationTime / PLAYER.animation.runFrameDuration) % 4;
-  }
-  return Math.floor(player.animationTime / PLAYER.animation.idleFrameDuration) % 2;
+  if (running) return runCycleFrame(player, PLAYER.animation.runFrames);
+  // Idle is one held pose. The sheets carry a second idle cell, and it
+  // used to alternate with this one, but the two poses differ by a small
+  // weight shift that reads as a twitch rather than as breathing.
+  // Standing still stays still. Cell 1 is left in the sheets as authored,
+  // so going back to a two-frame idle is a one-line change here.
+  return 0;
+}
+
+// Both run cycles are six cells stepped at the same rate off the same
+// clock, so this is the one place the stride is advanced -- which is what
+// makes the plain cycle and the run-and-gun cycle interchangeable
+// mid-stride.
+function runCycleFrame(player, frames) {
+  return frames[Math.floor(player.animationTime / PLAYER.animation.runFrameDuration) % frames.length];
 }
 
 function drawPlayerSprite(ctx, player, image, flashing, frame = null) {

@@ -34,6 +34,47 @@ export const WORLD = {
   // together, with room to spare -- and a taller fill costs nothing.
   groundDepth: 600,
   groundColor: '#1b2333',
+
+  // The shared outdoor ground art (cobblestone road over dirt). It is the
+  // VISUAL only: groundY above is still the collision surface and nothing
+  // about it moved to fit the art -- the art was anchored to it instead.
+  //
+  // Drawn 1:1 at its native size and repeated horizontally from world x 0
+  // (game.js drawGround), never stretched across the level: no runtime
+  // scaling means no resampling and no soft pixels. The image's own top
+  // row IS the top of the cobblestones, so its top edge sits exactly on
+  // groundY and the player stands on the stones.
+  //
+  // groundColor stays as the base fill drawn beneath the tiles, for the
+  // frames before the asset has loaded and for anything deeper than
+  // tileHeight.
+  groundTexture: {
+    path: 'assets/backgrounds/world-ground-v2.webp',
+    tileWidth: 1561,
+    tileHeight: 415,
+  },
+  // The Research Golem arena's own floor. Same rules as groundTexture;
+  // game.js drawGround swaps to it only while researchGolemInterior().
+  arenaGroundTexture: {
+    path: 'assets/backgrounds/arena1-ground.webp',
+    tileWidth: 1962,
+    tileHeight: 415,
+  },
+  // The Graduation arena's floor: the floating stone ledge the arena art
+  // stands on (art-source/backgrounds/ground-boss-2.png). Same rules again,
+  // swapped in only while graduationInterior() (game.js drawGround), with
+  // two differences: its tiling starts at the arena art's own left edge
+  // instead of world x 0, and the tile is wider than the arena frame, so
+  // exactly one piece of ledge is ever on screen -- no visible repeat.
+  // fillColor replaces groundColor underneath it: the ledge floats in the
+  // sky, so what shows through its ragged bottom edge is cloud haze (the
+  // gu-ceremony gradient's bottom colour), not the dark earth slab.
+  graduationGroundTexture: {
+    path: 'assets/backgrounds/graduation-ground.webp',
+    tileWidth: 2023,
+    tileHeight: 420,
+    fillColor: '#c9d3f0',
+  },
 };
 
 // Background sections (PLAN.md task 6.8, brought forward). One continuous
@@ -111,11 +152,25 @@ export const BACKGROUNDS = {
   // near layer -- the placeholder silhouette read as stray flat rectangles
   // against the new full-colour art and was removed rather than kept as a
   // mismatched filler.
+  //
+  // Background-transition repair: both strips' source art was cropped to
+  // its own content bounds (scripts/runtime-assets.py), shrinking tileWidth
+  // from 1774 to 1720 (far) / 1728 (mid) -- they carried far more
+  // transparent edge padding than the spec's 96px minimum actually needs.
+  // That alone only shrinks the gap at a mirror seam; it does not stop one
+  // happening, because far and mid still tile at nearly the same period and
+  // both originate at world x 0, so their seams (and thus both layers'
+  // transparent edges) kept landing at the same world x -- a seam in mid was
+  // never covered by far, because far had a seam of its own at that exact
+  // spot. `tileOffset` (game.js drawImageTile) shifts far's tiling phase by
+  // half its own tileWidth, so its seams fall in the middle of mid's tiles
+  // instead: whichever layer is at a seam, the other is showing solid
+  // artwork over it.
   'goteborg-city': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#131c2e' } },
-      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 734, colorMode: 'full-color' } },
-      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 741, colorMode: 'full-color' } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-far.webp', tileWidth: 1720, tileOffset: 860, displayHeight: 887, baselineY: 734, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-mid.webp', tileWidth: 1728, displayHeight: 887, baselineY: 741, colorMode: 'full-color' } },
     ],
   },
 
@@ -147,8 +202,27 @@ export const BACKGROUNDS = {
   'goteborg-haga': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#131c2e' } },
-      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 734, colorMode: 'full-color' } },
+      // Same source as goteborg-city's far layer above -- tileWidth/tileOffset
+      // must match it or this section would stretch the now-cropped art back
+      // toward its old, wider box.
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-far.webp', tileWidth: 1720, tileOffset: 860, displayHeight: 887, baselineY: 734, colorMode: 'full-color' } },
       { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-haga-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 676, colorMode: 'full-color' } },
+    ],
+  },
+
+  // 8b -- Haga again: the short lead-in to the Graduation portal. The same
+  // two strips as 'goteborg-haga' above, with one difference: the mid
+  // strip opens on an unmirrored tile at the section's own start
+  // (openingPath, the USA mechanism in game.js drawImageTile). Ordinary
+  // repeats alternate mirrored/unmirrored by world position, and the tile
+  // behind the portal reveal happened to be a mirrored one -- the HAGA
+  // bunting read "AGAH". Anchoring to the section keeps it readable
+  // wherever the section is moved to.
+  'goteborg-haga-portal': {
+    layers: [
+      { parallax: FAR, source: { type: 'color', color: '#131c2e' } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-city-far.webp', tileWidth: 1720, tileOffset: 860, displayHeight: 887, baselineY: 734, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/goteborg-haga-mid.webp', openingPath: 'assets/backgrounds/goteborg-haga-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 676, colorMode: 'full-color' } },
     ],
   },
 
@@ -163,26 +237,36 @@ export const BACKGROUNDS = {
     ],
   },
 
-  // 7 -- USA, the stadium. Open bright sky and a low wide bowl -- the
-  // widest, lowest silhouette in the level, against the tallest sky.
+  // 7 -- USA, the exchange semester. Approved far/mid strips; the
+  // placeholder gradient and stadium-bowl silhouette are gone, for the
+  // same reason Göteborg's were -- flat rectangles read as debris next to
+  // full-colour art.
+  //
+  // The mid layer is the one place in the level that opens on a different
+  // strip from the one it repeats: `usa-mid-columbia` plays ONCE as the
+  // section's establishing shot, then `usa-mid-campus` repeats for the
+  // rest of it (openingPath, game.js drawImageTile). Author's call, and it
+  // is what makes arriving in the USA read as arriving somewhere specific
+  // before settling into ordinary campus scenery.
+  //
+  // The far river/skyline strip has no opening tile: it repeats across the
+  // whole section, behind both mid strips.
   'usa-stadium': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#5b8fc9' } },
-      { parallax: MID, source: { type: 'gradient', from: '#5b8fc9', to: '#a9cbe8' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#3f5d78', tileWidth: 640, heights: [50, 70, 80, 80, 80, 80, 70, 50] } },
+      { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/usa-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 727, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/usa-mid-campus.webp', openingPath: 'assets/backgrounds/usa-mid-columbia.webp', tileWidth: 1774, displayHeight: 887, baselineY: 734, openingBaselineY: 709, colorMode: 'full-color' } },
     ],
   },
 
-  // 8 -- GU, the Graduation arena. Dark ceremonial blue, sparse tall
-  // columns. The other arena, and it should read as one -- also
-  // boss-specific world-space scenery going forward (AGENTS.md §6,
-  // BACKGROUND-ASSET-SPEC.md), not a reusable parallax section; the
-  // placeholder look below stands in until that dedicated arena art exists.
+  // 8 -- GU, the Graduation arena. Like Handels, only a fallback now: the
+  // arena itself is the boss-specific `graduation-arena` landmark below
+  // (AGENTS.md §6). The gradient runs from the art's own sky blue at the
+  // top to the cloud haze under its floating floor, so screen-shake bleed
+  // above the art and the sky under the ledge both read as the same place.
   'gu-ceremony': {
     layers: [
-      { parallax: FAR, source: { type: 'color', color: '#0e1730' } },
-      { parallax: MID, source: { type: 'gradient', from: '#0e1730', to: '#1a2748' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#2f3f6b', tileWidth: 240, heights: [0, 300, 0, 0] } },
+      { parallax: FAR, source: { type: 'gradient', from: '#2d6dd1', to: '#c9d3f0' } },
     ],
   },
 };
@@ -265,7 +349,31 @@ export const LANDMARK = {
     // WORLD.groundY. Re-measured against the delivered webp itself (a
     // per-row alpha-solidity scan, not the padding trim baselineY already
     // exists to describe) rather than adjusted by feel.
-    'research-golem-arena': { path: 'assets/backgrounds/research-golem-arena.webp', colorMode: 'full-color', width: 2172, height: 724, baselineY: 632, alpha: 1 },
+    //
+    // Arena-floor task: the art paints its own flat floor band (rows
+    // 605-633 in the v3 art, including its dark top edge) under the
+    // stairs, which read as a second floor above the arena1-ground tiles.
+    // baselineY sits at the band's top row instead of its bottom, so the
+    // band is hidden behind the ground (drawGround paints after
+    // drawLandmarks). WORLD.groundY -- the collision surface -- is
+    // unchanged. v3 art (boss-1-arena-v3.png): same size and door/pedestal
+    // positions as v2, sharper detail.
+    'research-golem-arena': { path: 'assets/backgrounds/research-golem-arena.webp', colorMode: 'full-color', width: 2172, height: 724, baselineY: 605, alpha: 1 },
+
+    // The Graduation entrance (boss-portal.png): the portal the player
+    // walks into at the end of the short Haga lead-in. Delivered at exactly
+    // this box (scripts/runtime-assets.py), so it draws 1:1. baselineY is
+    // the bottom row of its stone base. Its opening is centred at local
+    // x 220 (level.js PORTAL_OPENING_LOCAL_X). Sized so the whole portal
+    // fits under the top of the frame with the camera at its resting height.
+    'graduation-portal': { path: 'assets/backgrounds/graduation-portal.webp', colorMode: 'full-color', width: 440, height: 402, baselineY: 374, alpha: 1 },
+    // The Graduation arena (boss-2-arena-v1.png), native size. It paints
+    // its own floor ledge from row ~726 down; baselineY sits at that row,
+    // so the art's ledge is hidden behind the separate graduation ground
+    // (WORLD.graduationGroundTexture), which drawGround paints afterwards
+    // on WORLD.groundY -- the same trick as the Research Golem arena.
+    // Portal opening at local x 318 (level.js GRADUATION_ARENA_PORTAL_LOCAL_X).
+    'graduation-arena': { path: 'assets/backgrounds/graduation-arena.webp', colorMode: 'full-color', width: 1831, height: 859, baselineY: 726, alpha: 1 },
   },
 };
 
@@ -320,12 +428,28 @@ export const PLAYER = {
   respawnDelay: 0.4, // s before control returns after death
 
   // Authored player sprite timing. All three animated appearances share
-  // the same ten-frame layout; armour remains the existing static sprite
-  // because it is collected immediately before the final comic.
+  // the same cell indices, including the six-frame run cycle: each outfit
+  // has its own authored run sheet, so there is no longer a base-only
+  // cadence. Armour stays static because it is collected immediately
+  // before the final comic.
   animation: {
-    idleFrameDuration: 0.36, // s per frame
     runFrameDuration: 0.1, // s per frame
+    // Cells 2-5 on the sheet's first row, then 10-11 on its third.
+    runFrames: [2, 3, 4, 5, 10, 11],
     shootFrameDuration: 0.08, // s per frame
+    // Run-and-gun: a second six-frame run cycle, firing arm extended,
+    // used instead of the standing shot when the player fires while
+    // actually running along the ground. Cells 12-17, the row left over
+    // on the sheet plus a fourth one.
+    //
+    // It deliberately has no duration of its own: it is stepped by
+    // runFrameDuration, from the same animationTime, so switching between
+    // the two cycles keeps the legs on the same beat instead of
+    // restarting the stride every time the fire key goes down.
+    //
+    // Every animated outfit carries these cells: each one is delivered as
+    // a complete eighteen-pose sheet.
+    runGunFrames: [12, 13, 14, 15, 16, 17],
   },
 
   // Coyote time: how long after walking off a ledge a jump still works.
@@ -567,13 +691,10 @@ export const COMIC = {
 // the real fight (bosses.js activation) starts the instant control
 // returns from the comic, with no further walking needed.
 //
-// walkDuration + beatDuration = 1.6 + 0.6 = 2.2s, inside the "two or
-// three seconds" target. This is Graduation's flow, unchanged (its own
-// venue art is future work, PLAN.md 6.8b) -- game.js only runs it when a
-// 'boss-approach' level entry has no revealCameraX.
+// Both bosses now run the reveal flow below. Graduation's own timings
+// (longer walk, thought bubbles) are in GRADUATION_ENTRANCE.
 export const BOSS_APPROACH = {
   walkDuration: 1.6, // s, control taken, walking forward at normal speed (not running)
-  beatDuration: 0.6, // s, stopped, a brief beat before the comic opens (Graduation's flow only)
 
   // Research Golem repair task: a camera-reveal beat inserted BEFORE the
   // walk, used only when a 'boss-approach' entry carries a revealCameraX
@@ -592,6 +713,39 @@ export const BOSS_APPROACH = {
   // camera should stop based on an authored target/framing... not because
   // Jakob physically reaches the edge of the screen").
   revealDoorMarginRight: 400, // px
+};
+
+// The Graduation entrance: the portal at the end of the short Haga
+// lead-in (level.js). Same beat as the Research Golem's approach (game.js
+// updateBossApproach): control taken, the camera glides to frame the
+// portal, Jakob thinks, walks into it, comic, then straight into the
+// arena and the fight. Only these values differ from BOSS_APPROACH.
+export const GRADUATION_ENTRANCE = {
+  // s of scripted walk from where control is taken to the portal. Longer
+  // than the Golem's, so control goes the moment the portal starts to come
+  // into view rather than when it is already fully on screen -- the
+  // trigger sits walkDuration * PLAYER.moveSpeed before the portal.
+  walkDuration: 2.0,
+  // px between the portal art's right edge and the right edge of the
+  // locked reveal frame: the shot ends just past the portal.
+  revealMarginRight: 60,
+  // Thought bubbles over Jakob, one after the other, each held this long.
+  thoughtDuration: 1.5, // s
+  thoughts: ['This can only be one thing…', 'Time for graduation!'],
+  thoughtBubble: {
+    font: '17px sans-serif',
+    lineHeight: 21,
+    maxWidth: 170, // px of text before wrapping
+    paddingX: 16,
+    paddingY: 12,
+    bump: 11, // px radius of the scallops around the cloud's edge
+    gapAboveHead: 88, // px from the hitbox top to the cloud's bottom edge (the head is ~42px above the hitbox)
+    offsetX: 40, // px the cloud sits right of Jakob's centre
+    fill: '#1f4e6b',
+    border: '#0d1117',
+    borderWidth: 3,
+    textColor: '#f7f3e3',
+  },
 };
 
 // Post-boss exit repair task (§9, game.js updateResearchGolemExitWalk): a
@@ -780,6 +934,39 @@ export const ENEMY_MATHBOOK = {
   // having touched a key. idleDuration's note above claims "a player who
   // does nothing must not die there"; at 6s that simply was not true.
   projectileLifetime: 3,
+
+  // Authored artwork (art-source/enemies/math-book). The gameplay
+  // rectangle above (48x48) stays the footprint -- collision, damage and
+  // placement are all measured against it, never against this sprite.
+  // The art is fitted to it and drawn from it.
+  //
+  // Both states are the SAME whole source canvas, delivered at 2x this
+  // draw canvas, so swapping idle -> open cannot shift the book: the two
+  // images share one origin and one draw box (scripts/runtime-assets.py
+  // ENEMY_SOURCES). The open book is the wind-up tell the placeholder
+  // colour lerp used to be -- it literally opens before it fires.
+  sprite: {
+    idlePath: 'assets/enemies/math-book-idle.webp',
+    telegraphPath: 'assets/enemies/math-book-open.webp',
+    // The draw canvas, not the visible book: within it the closed book
+    // measures ~39x61 and the open one ~64x61, deliberately overhanging
+    // the 48x48 footprint rather than the footprint being grown to match.
+    displayWidth: 88,
+    displayHeight: 88,
+    // From "centred on the footprint". Both states' visible content sits
+    // 1px right of and 8px below the draw canvas's centre, so these two
+    // numbers put the book centred on the footprint with its bottom edge
+    // flush to the footprint's -- a visual alignment only.
+    offsetX: -1,
+    offsetY: -8,
+    // Same tells as the placeholder, washed over the sprite's own pixels
+    // instead of a block (bosses.js drawSpriteTint does this for the
+    // Research Golem). Lighter than the golem's 0.85/0.8: the open-book
+    // swap already carries the wind-up here, so the tint only has to
+    // reinforce it, not be the whole tell.
+    telegraphTintAlpha: 0.5,
+    hitFlashTintAlpha: 0.7,
+  },
 };
 
 // No hitFlashDuration: the Endless Inbox cannot be damaged at all
@@ -824,6 +1011,32 @@ export const ENEMY_HELMET = {
   // mid-jump over it), where the tell would be unreadable.
   noChargeHorizontalRange: 60,
   noChargeVerticalRange: 40,
+
+  // Authored artwork (art-source/enemies/football-helmet), fitted to the
+  // 56x56 gameplay footprint exactly as the maths book above is: the
+  // rectangle stays the collision and charge geometry, the sprite is
+  // drawn from it. Idle and telegraph are the same whole source canvas
+  // delivered at 2x this draw canvas, which is what preserves the
+  // authored shrink/tilt of the wind-up instead of it reading as the
+  // helmet jumping.
+  //
+  // The art faces LEFT; the entity's `facing` (1 = right) flips it, so
+  // "it is looking at you" stays true while it idles and the charge
+  // direction is readable before it starts.
+  sprite: {
+    idlePath: 'assets/enemies/football-helmet-idle.webp',
+    telegraphPath: 'assets/enemies/football-helmet-telegraph.webp',
+    // Draw canvas; the helmet itself measures ~70x65 inside it.
+    displayWidth: 124,
+    displayHeight: 124,
+    offsetX: -1,
+    offsetY: -3, // bottom of the helmet flush with the footprint's bottom
+    telegraphTintAlpha: 0.5,
+    // Dazed recovery -- the one state that means "hit it now", so it gets
+    // the heaviest wash of the three.
+    recoveryTintAlpha: 0.55,
+    hitFlashTintAlpha: 0.7,
+  },
 };
 
 // Kill barks (AGENTS.md §4: "Short spoken barks after each kill, tying the
@@ -894,6 +1107,74 @@ export const RESEARCH_GOLEM = {
   maxHp: 30,
   contactDamage: 1,
 
+  // Authored Research Golem artwork (art-source/research-golem, delivered
+  // by scripts/runtime-assets.py). Presentation only: width/height above
+  // stay the gameplay footprint -- collision, damage and the claim-phase
+  // geometry are all measured against that rectangle, never against this
+  // sprite. The art is simply fitted to it and drawn from it.
+  //
+  // The delivered sheet is sixteen poses on a shared grid
+  // (scripts/prepare-boss-animation.py): a four-frame idle, then one
+  // four-frame sequence per attack pattern, each reading ready, wind-up,
+  // strike, recover. Every pose stands on the same foot line and is
+  // centred on the same column, so the golem never drifts between them.
+  sprite: {
+    path: 'assets/bosses/research-golem.webp',
+    columns: 4,
+    // The cell, not the body: the body stands 219px tall inside it, and
+    // the extra room is for the poses that reach past the idle
+    // silhouette -- the raised bundle of the throw, the extended fists.
+    cellWidth: 210,
+    cellHeight: 252,
+    // Where the feet sit inside a cell, measured from its top. The cell
+    // is drawn so this line lands on the footprint's bottom edge.
+    footY: 252,
+    // Horizontally centred on the footprint. Both zero: the prepared
+    // sheet already lines up, and these exist so a nudge is one number
+    // here instead of arithmetic in bosses.js.
+    offsetX: 0,
+    offsetY: 0,
+
+    idleFrames: [0, 1, 2, 3],
+    idleFrameDuration: 0.42, // s per frame
+
+    // Which four cells belong to each attack pattern. Authored per
+    // pattern rather than by position, because the sheet's rows and the
+    // cyclePatterns order are not the same list and never have to be:
+    // the slam is the ground shot, the thrown bundle is the high arc,
+    // and the punch is the spread burst.
+    attackFrames: {
+      'spread-burst': [4, 5, 6, 7],
+      'ground-shot': [8, 9, 10, 11],
+      'high-arc': [12, 13, 14, 15],
+    },
+    // How much of the wind-up is spent on the ready pose before the
+    // golem commits to the wind-up pose. The telegraph runs 0.9-1.0s
+    // (patterns above), so this leaves roughly 0.6s of unmistakable
+    // raised arm -- AGENTS.md §4's "a raised arm", which it calls the
+    // single most important thing for how the game feels.
+    readyFraction: 0.35,
+    strikeDuration: 0.16, // s the strike pose holds after the shot leaves
+    recoverDuration: 0.22, // s of follow-through before returning to idle
+
+    // The existing tells, kept exactly as they read before -- the
+    // placeholder lerped its whole rectangle toward telegraphColor over
+    // the wind-up and toward DAMAGE_FLASH.enemyColor on a hit. The same
+    // colours wash over the SPRITE'S OWN PIXELS instead of a block,
+    // ramping from nothing to these peak alphas.
+    //
+    // A brighten/glow blend was tried first and rejected: the golem is
+    // mostly white paper, so screening white or amber over it barely
+    // changed anything -- the weakest possible telegraph on exactly the
+    // fight that must not have one.
+    //
+    // Lowered from 0.85 now that the wind-up has a POSE. The tint no
+    // longer has to carry the whole telegraph on its own, and at 0.85 it
+    // washed out the raised arm that is now the clearer tell.
+    telegraphTintAlpha: 0.55,
+    hitFlashTintAlpha: 0.8,
+  },
+
   hpBar: {
     width: 220,
     height: 16,
@@ -923,6 +1204,31 @@ export const RESEARCH_GOLEM = {
   phaseB: {
     cyclePatterns: ['ground-shot', 'high-arc', 'spread-burst'],
     cycleInterval: 0.9, // s between attack starts — was 1.3
+  },
+
+  // Authored projectile art (art-source/projectiles), one five-frame row
+  // per pattern. Presentation only: projectileWidth/Height below stay the
+  // hitbox and still decide every collision. The art is drawn about 3x
+  // that, which is the generous direction -- a player who sees a heap of
+  // paper coming is only hit by its core, never by the edge of the
+  // drawing.
+  //
+  // `anchor` is 'bottom' for the ground shot alone. Its art is a heap of
+  // paper standing on the floor, and that pattern travels along the floor
+  // ("at floor level", bosses.js fireAttack), so centring it would bury
+  // half the heap in the cobbles.
+  projectileSprite: {
+    path: 'assets/bosses/boss-projectiles.webp',
+    columns: 5,
+    cellWidth: 80,
+    cellHeight: 68,
+    frameDuration: 0.09, // s per frame
+    // Row on the sheet, and the box the art is drawn in.
+    rows: {
+      'ground-shot': { row: 0, width: 60, height: 52, anchor: 'bottom' },
+      'high-arc': { row: 1, width: 52, height: 50, anchor: 'centre' },
+      'spread-burst': { row: 2, width: 52, height: 34, anchor: 'centre' },
+    },
   },
 
   // Attack patterns as data: telegraph duration, projectile speed/angle,
@@ -1027,36 +1333,447 @@ export const CLAIM_PHASE = {
   ],
 };
 
-// Boss 2 — Graduation (AGENTS.md §4). "No new mechanics: the same
-// patterns, faster and denser, over a shorter fight." Reuses
-// RESEARCH_GOLEM.patterns directly -- literally the same attacks, not
-// reinvented -- and the claim phase is Research-Golem-only, never reused
-// here. "Larger sprite / heavier shake / music change" are spectacle
-// (task 8.3), not this task; size/color stay grey-box placeholders here.
+// Boss 2 — Graduation (AGENTS.md §4). An endurance finish over a shorter
+// fight, with four abilities of his own (below, `abilities`) -- all of
+// them dodged with the existing verbs, run and jump. The claim phase is
+// Research-Golem-only, never reused here. Music and heavier shake are
+// spectacle (PLAN.md 7.3), not tuned here.
 export const GRADUATION = {
-  width: 140,
-  height: 220,
+  // The gameplay footprint: what player shots hit and the wall the player
+  // can't walk past. Sized to the drawn body (cap to feet, shoulder to
+  // shoulder) -- the sprite below is fitted to it and drawn from it, the
+  // same way the Research Golem's is.
+  width: 160,
+  height: 270,
   color: '#5b4a72',
   hitFlashDuration: 0.12, // s
   telegraphColor: '#e2b23c',
-  maxHp: 20, // lower than the Research Golem's 30 -- a shorter fight
+  // No claim phases, so the fight is still shorter than the Research
+  // Golem's even with more HP. Measured: a test run that only held fire
+  // point-blank and never dodged won in about 20s; a player who dodges
+  // lands far fewer shots, so expect roughly 30-45s.
+  maxHp: 60,
   contactDamage: 1,
   solidWall: true,
+
+  // Authored Graduation artwork (art-source/graduation-boss, prepared by
+  // scripts/prepare-graduation-animation.py). Twenty poses on one grid: a
+  // four-frame idle, then one four-frame sequence per attack, each
+  // reading ready, wind-up, strike, recover -- wired exactly like
+  // RESEARCH_GOLEM.sprite. Every pose stands on the same foot line and
+  // centre, so switching poses never moves him.
+  sprite: {
+    path: 'assets/bosses/graduation-boss.webp',
+    columns: 4,
+    cellWidth: 330,
+    cellHeight: 355,
+    // The shared pivot inside every cell: the centre between his feet
+    // (pivotX) and the foot line (footY), both measured from the cell's
+    // top-left. Drawn so the pivot lands on the footprint's bottom centre.
+    pivotX: 165,
+    footY: 347,
+    // Draw scale of the delivered sheet. The art is delivered at its
+    // native resolution (never upscaled); at 1 he stands ~270px to the
+    // top of his cap and ~310px to the tip of his mace, about 1.2-1.4x
+    // the Research Golem's 220. A whole number on purpose: the renderer
+    // draws with image smoothing off.
+    scale: 1,
+    offsetX: 0, // px nudges, so a fix is one number here
+    offsetY: 0,
+
+    idleFrames: [0, 1, 2, 3],
+    idleFrameDuration: 0.45, // s per frame
+    // Which four cells belong to each attack. Sheet rows: 2 mace raised
+    // overhead, 3 two-handed slam, 4 mace thrust forward, 5 open hand.
+    attackFrames: {
+      'book-rain': [4, 5, 6, 7],
+      'staff-slam': [8, 9, 10, 11],
+      volley: [12, 13, 14, 15],
+      'rising-slabs': [16, 17, 18, 19],
+    },
+    // Same meaning as RESEARCH_GOLEM.sprite: share of the wind-up spent
+    // on the ready pose before the wind-up pose, then how long the strike
+    // and follow-through poses hold after the attack goes off.
+    readyFraction: 0.35,
+    strikeDuration: 0.2, // s
+    recoverDuration: 0.3, // s
+    telegraphTintAlpha: 0.45,
+    hitFlashTintAlpha: 0.8,
+  },
 
   hpBar: {
     width: 220,
     height: 16,
-    offsetY: 34,
+    // px above the footprint's top edge. Clears the raised mace, which
+    // reaches ~75px above the footprint in the book-rain poses.
+    offsetY: 90,
     backgroundColor: '#1b2333',
     borderColor: '#0d1117',
     fillColor: '#c9574b',
   },
 
-  // No claim phase, so no invulnerable gate -- just an HP-triggered
-  // speed-up part way through, reusing the same phase-cycling approach as
-  // the Research Golem's phaseA/phaseB (not a new mechanic, same pattern
-  // applied to a different boss).
-  stage1: { cyclePatterns: ['ground-shot', 'high-arc', 'spread-burst'], cycleInterval: 0.9 },
-  stage2: { cyclePatterns: ['ground-shot', 'spread-burst', 'high-arc', 'ground-shot'], cycleInterval: 0.55 },
-  stage2Threshold: 0.5, // HP fraction that triggers the speed-up
+  // Fight structure (AGENTS.md §4). No claim phase. The boss works through
+  // `rotation` in order, over and over: wind-up (the ability's own
+  // telegraphDuration), the strike, then the ability's own `cooldown`
+  // (counted from the strike) before the next wind-up starts. Once his HP
+  // drops to stage2Threshold he moves to stage2's rotation and every
+  // cooldown is multiplied by stage2.cooldownScale.
+  //
+  // Stage 1 opens with the familiar one (the volley, closest to the
+  // Research Golem), then the two new ones. Rising slabs are held back
+  // for stage 2: its rotation is stage 1's with the slabs added at the
+  // end. If the switch comes before the opening three have all been
+  // shown, he finishes them first; otherwise the slabs come next
+  // (bosses.js damageGraduationBoss). After that, all four rotate.
+  stage1: { rotation: ['volley', 'book-rain', 'staff-slam'] },
+  stage2: { rotation: ['volley', 'book-rain', 'staff-slam', 'rising-slabs'], cooldownScale: 0.85 },
+  stage2Threshold: 0.5, // HP fraction
+
+  // After the player dies: any wind-up in progress is dropped and the boss
+  // waits this long before starting the next one (on top of the player's
+  // own respawn invulnerability, PLAYER.invulnerabilityDuration).
+  respawnGrace: 1.6, // s
+  // Lifetime of every Graduation projectile. Long enough to cross the whole
+  // arena at the slowest speed below; off-screen culling (game.js) is
+  // what normally removes them.
+  projectileLifetime: 6, // s
+
+  // The abilities, as data. Every one has a telegraphDuration inside the
+  // required 0.8-1.0s (checked at load, bosses.js) -- the wind-up that
+  // the ready and wind-up poses play over -- and a cooldown after it goes
+  // off. Colours are the hazard palette: warm orange-red is only ever
+  // something that hurts.
+  abilities: {
+    // Row 4 -- mace thrust forward. A staggered volley along the floor at
+    // two heights, fired from his front edge. `height` is the shot's
+    // centre above the floor: the low shots (24) must be jumped; the high
+    // ones (135) pass over a player who simply stays on the ground (the
+    // player is 64 tall). `delay` is s after the strike. Every gap between
+    // a low and the next shot leaves time to land before it arrives
+    // (checked in the browser against the real jump values -- see the
+    // task report), so no two shots ask for opposite answers at once.
+    volley: {
+      telegraphDuration: 0.9,
+      cooldown: 3.0, // s from the strike to the next wind-up -- past the last shot
+      projectileSpeed: 380, // px/s
+      projectileWidth: 30, // the hitbox
+      projectileHeight: 14,
+      visualScale: 1.6, // drawn this much larger than the hitbox, around its centre
+      shots: [
+        { height: 24, delay: 0 },
+        { height: 135, delay: 1.1 },
+        { height: 24, delay: 1.8 },
+        { height: 135, delay: 2.9 },
+      ],
+      color: '#ff6a3d',
+    },
+
+    // Row 2 -- mace raised overhead. Books fall from above the top of the
+    // screen onto the floor between the arena's left wall and the boss.
+    // The moment the wind-up starts, a shadow marks every landing spot, and
+    // it stays until that book lands -- so the whole wind-up plus the fall
+    // is warning time. The books are spread `bookSpacing` apart (a player
+    // fits between two with room to spare) and one stretch of at least
+    // safeGapWidth is always left empty, placed at random.
+    'book-rain': {
+      telegraphDuration: 1.0,
+      cooldown: 2.4, // s from the strike -- the last book has landed by then
+      bookWidth: 48, // the hitbox
+      bookHeight: 34,
+      visualScale: 1.35, // drawn this much larger than the hitbox
+      bookSpacing: 130, // px between neighbouring books' centres
+      safeGapWidth: 240, // px, at least -- five player widths
+      spawnHeight: 800, // px above the floor: just above the arena camera's top edge
+      fallSpeed: 560, // px/s, steady -- the shadow's timing is exact
+      dropStagger: 0.3, // s, each book drops a random 0-this after the strike
+      color: '#e0503a', // cover
+      pageColor: '#f4ead2',
+      // The landing shadow: darkens from startAlpha to endAlpha as its book
+      // gets closer, under a ring in the hazard colour.
+      shadow: {
+        color: '#140f1e',
+        startAlpha: 0.4,
+        endAlpha: 0.85,
+        radiusY: 10, // px, the ellipse's half-height on the floor
+        widthScale: 1.7, // ellipse width, as a multiple of bookWidth
+        ringColor: '#ff6a3d',
+        ringWidth: 3, // px
+      },
+    },
+
+    // Row 3 -- two-handed overhead slam. The staff hits the floor and
+    // waveCount shockwaves run along it toward the player, one after
+    // another, each to be jumped. They are ordinary floor-level
+    // projectiles. waveSpacing is the distance between two waves; at
+    // waveSpeed that is the time between them, and it must leave the
+    // player time to land from one full jump and still have minLandingSlack
+    // before the next wave needs jumping -- checked at load against the
+    // real jump (bosses.js), and measured in the browser (task report).
+    'staff-slam': {
+      telegraphDuration: 0.95,
+      cooldown: 4.6, // s from the strike -- the last wave has crossed the arena by then
+      waveCount: 3,
+      waveSpeed: 360, // px/s
+      waveSpacing: 540, // px between waves -> 1.5s apart
+      minLandingSlack: 0.3, // s, at least, between landing and the next wave
+      // The hitbox. Narrow on purpose: how long a wave overlaps the player
+      // is what shortens the jump window, and the drawn dome is far wider.
+      waveWidth: 32,
+      waveHeight: 28,
+      visualScale: 1.4, // drawn this much larger than the hitbox
+      color: '#ff6a3d',
+    },
+
+    // Row 5 -- open hand raised. Only joins the fight in stage 2. Several
+    // spots on the floor glow and crack for the whole wind-up; when it
+    // ends a stone slab bursts up out of each one, holds, and slams back
+    // down. The slabs are timed damage zones, not terrain -- nothing can
+    // stand on them and the floor itself never changes. The first spot is
+    // wherever the player is standing when the wind-up starts (so it asks
+    // for a step aside), the rest spread out from it every slabWidth +
+    // safeGapWidth -- so between any two slabs there is always at least
+    // safeGapWidth of floor that nothing rises from.
+    'rising-slabs': {
+      telegraphDuration: 1.0,
+      cooldown: 2.0, // s from the strike -- the slabs are down again by then
+      slabCount: 4, // at most; fewer if the arena runs out of floor
+      slabWidth: 110, // px
+      safeGapWidth: 170, // px of untouched floor between two slabs
+      slabHeight: 130, // px at full height
+      riseDuration: 0.15, // s
+      holdDuration: 0.35, // s at full height
+      slamDuration: 0.12, // s back down
+      // The warning over each spot through the wind-up: a glowing strip on
+      // the floor that pulses brighter as the wind-up runs out, with
+      // cracks across it.
+      // Strong on purpose: the arena floor is pale stone, and a faint
+      // orange wash over it was nearly invisible at the arena's zoom.
+      warning: {
+        glowColor: '#ff6a3d',
+        glowHeight: 48, // px above the floor the glow rises
+        bandHeight: 6, // px, the solid strip of glow on the floor itself
+        startAlpha: 0.55,
+        endAlpha: 1,
+        pulseRate: 9, // radians per second of the pulse
+        pulseDepth: 0.2, // alpha the pulse swings by
+        crackColor: '#2a1208',
+        crackWidth: 4, // px
+        crackSegments: 7,
+        crackDepth: 6, // px the crack zigzags up and down
+      },
+      slabColor: '#8b8e98',
+      slabShadeColor: '#5f626c',
+      slabEdgeColor: '#ff6a3d', // the hazard colour, along the slab's top
+      slabEdgeHeight: 8, // px
+    },
+  },
+};
+
+// The Clinic reception encounter (reception.js, level.js
+// 'reception-encounter'). A PROTOTYPE, built up in small playtested steps:
+// the intro sequence, Round 1 (move and jump to collect files), Round 2
+// (files plus mouse drag-and-drop sorting at the same time) and Round 3
+// (everything at once, deliberately barely possible). Every number here is
+// expected to change after playtesting; none of it is locked.
+//
+// Positions (arena edges, desk, sign, platforms, items) are layout and live
+// in level.js. This block is timing, feel and look.
+export const RECEPTION = {
+  // --- Camera. While the encounter runs the camera frames the whole arena
+  // (level.js arenaLeftX..arenaRightX): the zoom is derived from that width,
+  // so a wider arena zooms out further on its own. groundScreenY is where
+  // the ground line sits on screen (of 720) while framed -- larger shows
+  // less dirt and more room above.
+  groundScreenY: 560, // px, screen space
+
+  // --- Intro sequence, in order. Control is taken for all three.
+  thinkDuration: 2.4, // s -- Jakob stops and wonders how hard admin can be
+  frameDuration: 2.6, // s -- camera pulls out to the arena; the desk welcomes him
+  readyDuration: 1.1, // s -- platforms pop in, "Let's go!", then control returns
+  platformPopDuration: 0.35, // s -- each platform's pop-in animation
+  platformPopStagger: 0.07, // s between one platform popping in and the next
+
+  // --- Round 1: items appear ONE AT A TIME, in level.js order; touching the
+  // current one reveals the next. Deliberately calm -- the sketch's 15 s
+  // is the tighter end of the range to try.
+  round1: {
+    timeLimit: 20, // s for all items
+  },
+  // --- Round 2: files (one at a time, as in Round 1) AND sorting cards,
+  // both before the clock runs out. Cards may be sorted in any order.
+  round2: {
+    timeLimit: 20, // s for both jobs together (30 felt far too generous in playtest)
+    introDuration: 2.6, // s -- control taken, the card tray appears, the desk explains
+  },
+
+  // --- Round 3: the overload. Eight tasks in pairs across every tier, the
+  // cards come as a ten-card deck (only the top card moves), and a card
+  // dropped in the wrong box costs time. Meant to beat most first-timers
+  // while staying
+  // possible for someone who has learned the layout -- deterministic, no
+  // randomness. Failing it does NOT restart it: the encounter ends with a
+  // friendly jab and an optional Retry button (reception.js).
+  round3: {
+    timeLimit: 20, // s for everything (24 was beaten with 4 s to spare by someone who knew the layout)
+    introDuration: 3.4, // s -- control taken, the top blocks pop in, the desk piles it on
+    wrongDropPenalty: 2, // s taken off the clock for a wrong drop
+  },
+  round3FailedHold: 3.0, // s the desk's "good try" is read with the arena still framed
+  round3FailedLineDuration: 4, // s the line stays up after the arena opens
+
+  roundClearedDuration: 2.0, // s the "well done" line holds before moving on
+  roundFailedDuration: 1.8, // s the "too slow" line holds before the round restarts
+  // After this many failed attempts at the same round, a "Try again / Skip
+  // this round" choice appears instead of the automatic restart -- nobody
+  // may be blocked from the application by this (AGENTS.md §2).
+  failsBeforeChoice: 2,
+
+  // --- Drag and drop sorting (Round 2 onward). SCREEN coordinates (of the
+  // 1280x720 canvas): the camera holds still during the rounds, so the tray
+  // and the boxes live in the dirt band along the bottom of the screen like
+  // a desk surface, clear of the play area above and of the Skip/Mute
+  // controls in the bottom-right corner.
+  sorting: {
+    panelColor: 'rgba(13, 17, 23, 0.55)',
+    panelPadding: 10,
+    // The tray the cards wait in, left.
+    trayX: 60,
+    trayY: 640,
+    cardWidth: 64,
+    cardHeight: 46,
+    cardGap: 14,
+    // The destination boxes, one per colour, right of centre.
+    binX: 700,
+    binY: 628,
+    binWidth: 100,
+    binHeight: 70,
+    binGap: 18,
+    dropPadding: 14, // px of forgiveness around each box when dropping
+    snapBackSpeed: 18, // how fast a dropped-elsewhere card eases home (higher = faster)
+    flashDuration: 0.3, // s a box flashes green (right) or red (wrong)
+    rightFlashColor: 'rgba(120, 230, 120, 0.7)',
+    wrongFlashColor: 'rgba(240, 80, 70, 0.75)',
+    outlineColor: '#0d1117',
+    // Every card and box carries a symbol as well as a colour, so the
+    // sorting still reads for colour-blind players.
+    colors: {
+      green: { fill: '#5cb85c', symbol: 'circle' },
+      yellow: { fill: '#e8c547', symbol: 'triangle' },
+      red: { fill: '#d9534f', symbol: 'square' },
+    },
+    binOrder: ['green', 'yellow', 'red'], // left to right
+    symbolColor: '#1b2333',
+    // Round 3's deck: each card under the top one peeks out this far
+    // right and down, so the pile's height reads at a glance. Kept small
+    // vertically so a ten-card pile still fits above the screen's bottom.
+    deckStackOffsetX: 4, // px per card
+    deckStackOffsetY: 2, // px per card
+    // The "-2 s" that floats off the clock on a wrong drop in Round 3.
+    penaltyFont: 'bold 20px sans-serif',
+    penaltyColor: '#ff6b5e',
+    penaltyDuration: 0.9, // s
+    // The first-time tooltip above the tray (Round 2 only), shown until
+    // the first card is sorted correctly.
+    tooltipFont: 'bold 16px sans-serif',
+    tooltipFill: '#f7f3e3',
+    tooltipTextColor: '#1b2333',
+    tooltipBobAmplitude: 4, // px
+    tooltipBobSpeed: 5, // rad/s
+  },
+
+  // --- Looks (placeholder art: plain shapes).
+  item: {
+    width: 30,
+    height: 38,
+    // Round 3's other kinds of task, drawn as a coloured badge instead of
+    // a sheet of paper: an unhappy face (a complaint) and a globe (a
+    // patient from outside the EU).
+    complaintColor: '#e8875c',
+    globeColor: '#4a90d9',
+    badgeDetailColor: '#1b2333',
+    hoverAboveSurface: 22, // px gap between the surface it sits over and its bottom
+    bobAmplitude: 4, // px
+    bobSpeed: 3, // rad/s
+    color: '#f7f3e3',
+    lineColor: '#7a8699',
+    outlineColor: '#0d1117',
+    glowColor: 'rgba(255, 236, 140, 0.45)',
+    glowPadding: 8, // px
+  },
+  desk: {
+    width: 180,
+    height: 84,
+    color: '#8a5a3b',
+    topColor: '#b07a52',
+    outlineColor: '#0d1117',
+    labelColor: '#f7f3e3',
+    labelFont: 'bold 14px sans-serif',
+    label: 'RECEPTION',
+  },
+  sign: {
+    postWidth: 10,
+    postHeight: 110,
+    boardSize: 46,
+    postColor: '#5a6272',
+    boardColor: '#f7f3e3',
+    crossColor: '#c9302c',
+  },
+  // Speech bubbles for this encounter's own lines (Jakob and the desk).
+  // Gameplay-local text like the kill barks, but they hold still for a set
+  // time instead of floating off. Sizes are in SCREEN pixels -- they are
+  // scaled back up against the camera zoom so they stay readable.
+  bubble: {
+    font: '17px sans-serif',
+    lineHeight: 21,
+    maxWidth: 190, // px before wrapping onto another line
+    paddingX: 12,
+    paddingY: 9,
+    radius: 12,
+    tail: 10,
+    gapAboveSpeaker: 14,
+    fill: '#1f4e6b',
+    border: '#0d1117',
+    textColor: '#f7f3e3',
+  },
+  hud: {
+    font: 'bold 26px sans-serif',
+    smallFont: '16px sans-serif',
+    color: '#f7f3e3',
+    warnColor: '#ffb347',
+    warnBelow: 5, // s left when the timer turns warnColor
+    shadowColor: 'rgba(13, 17, 23, 0.75)',
+    marginX: 28,
+    marginY: 30,
+    // The instruction panel in the sky, top centre.
+    hintFont: 'bold 20px sans-serif',
+    hintColor: '#f7f3e3',
+    hintFill: 'rgba(31, 78, 107, 0.85)',
+    hintBorder: '#0d1117',
+    hintPaddingX: 18,
+    hintPaddingY: 10,
+    hintTop: 22, // px from the top of the screen
+  },
+  // Placeholder copy -- author-owned (AGENTS.md §10), rewrite freely.
+  lines: {
+    think: 'How hard can it be to work as an administrator?',
+    welcome: 'Welcome! Time to test your skills.',
+    ready: "Let's go!",
+    round1Task: 'Register patient',
+    // The instruction shown in the sky, top centre, for the whole round.
+    round1Hint: 'Grab each patient file before the time runs out',
+    round1Cleared: 'Nicely done. That was the easy part.',
+    roundFailed: 'Too slow! Again.',
+    round2Intro: 'Oh, and you have to sort these at the same time.',
+    round2Task: 'Register patient, book patient',
+    round2Hint: 'Grab the files AND sort the cards before the time runs out',
+    sortTooltip: 'Drag each card into the box with the same colour',
+    round2Cleared: 'Not bad. Not bad at all.',
+    round3Intro: 'Busy day! Handle a complaint, register and book. Oh, and this one is not an EU citizen.',
+    round3Task: 'Complaint, register, book, non-EU patient — and sort!',
+    round3Hint: 'Busy day! Every task AND the whole deck before the time runs out',
+    round3SortTooltip: 'Only the top card moves: drag it to its colour',
+    round3Cleared: '...wow. You actually did it.',
+    round3Failed: 'Good try! A hectic front desk is not for everyone ;) (It is possible.)',
+    roundSkipped: 'Fair enough. Moving on!',
+  },
 };

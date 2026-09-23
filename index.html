@@ -105,6 +105,30 @@
       </div>
 
       <!--
+        The Clinic reception's "Try again / Skip this round" choice
+        (reception.js). Appears only after the same round has been failed
+        twice in a row, so nobody can be stuck there (AGENTS.md §2). A
+        choice is UI, so it is DOM (AGENTS.md §5); reception.js owns when
+        it shows, ui.js owns the element.
+      -->
+      <div id="reception-choice" class="reception-choice" hidden>
+        <p class="reception-choice-text">Busy day at the front desk.</p>
+        <div class="reception-choice-actions">
+          <button id="reception-retry" class="reception-choice-button" type="button">Try again</button>
+          <button id="reception-skip" class="reception-choice-button" type="button">Skip this round</button>
+        </div>
+      </div>
+
+      <!--
+        The Clinic reception's Retry (reception.js): after a failed Round 3
+        the arena opens up and play simply continues -- this small,
+        optional button is for anyone who wants another go, and disappears
+        once they walk on past the desk. Deliberately low-key, like the
+        persistent controls; it must never read as "you have to do this".
+      -->
+      <button id="reception-retry-final" class="reception-retry-final" type="button" hidden>Retry the front desk</button>
+
+      <!--
         Persistent controls (PLAN.md task 4.4, AGENTS.md §5): Skip to
         application and Mute/Unmute, present during gameplay and comics.
         Last in #viewport so it paints above both the canvas and the

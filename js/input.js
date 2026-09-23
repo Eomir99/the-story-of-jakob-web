@@ -16,6 +16,15 @@ const pressedThisFrame = new Set();
 // mouse button isn't a KeyboardEvent.code.
 let mouseDown = false;
 
+// The mouse as a pointer (the Clinic reception's drag and drop,
+// reception.js): position in the canvas's own 1280x720 coordinates, however
+// large the canvas is drawn on screen, plus press/release edges that are
+// cleared with the keyboard's in clearFrameInput.
+// pressX/pressY: where the button went down -- a quick flick can press,
+// move and release all between two steps, and the press still has to land
+// on what was under it at the time.
+const pointer = { x: 0, y: 0, pressX: 0, pressY: 0, down: false, pressed: false, released: false };
+
 // Input suppression (PLAN.md task 3.5): the utspring sequence ignores the
 // player entirely for its four to six seconds, including fire. This is a
 // flag on the existing system, not a second input path -- the handlers
@@ -58,12 +67,38 @@ export function initInput(target = window) {
   if (canvas) {
     canvas.addEventListener('contextmenu', (event) => event.preventDefault());
     canvas.addEventListener('mousedown', (event) => {
-      if (event.button === 0) mouseDown = true;
+      if (event.button !== 0) return;
+      mouseDown = true;
+      updatePointerPosition(canvas, event);
+      pointer.pressX = pointer.x;
+      pointer.pressY = pointer.y;
+      pointer.down = true;
+      pointer.pressed = true;
     });
+    window.addEventListener('mousemove', (event) => updatePointerPosition(canvas, event));
   }
   window.addEventListener('mouseup', (event) => {
-    if (event.button === 0) mouseDown = false;
+    if (event.button !== 0) return;
+    // The release point is where a dragged card lands, even if no
+    // mousemove arrived between the last move and the release.
+    if (canvas) updatePointerPosition(canvas, event);
+    mouseDown = false;
+    if (pointer.down) pointer.released = true;
+    pointer.down = false;
   });
+}
+
+function updatePointerPosition(canvas, event) {
+  const rect = canvas.getBoundingClientRect();
+  pointer.x = ((event.clientX - rect.left) * canvas.width) / rect.width;
+  pointer.y = ((event.clientY - rect.top) * canvas.height) / rect.height;
+}
+
+// The pointer, in canvas coordinates. While input is suppressed it still
+// reports where it is, but never as held, pressed or released.
+export function getPointer() {
+  if (suppressed) return { ...pointer, down: false, pressed: false, released: false };
+  return { ...pointer };
 }
 
 // Drops all held and pressed state. Called on focus loss; safe to call at
@@ -72,6 +107,9 @@ export function resetInput() {
   keysDown.clear();
   pressedThisFrame.clear();
   mouseDown = false;
+  pointer.down = false;
+  pointer.pressed = false;
+  pointer.released = false;
 }
 
 // True every frame the action's key (or, for 'shoot', the left mouse
@@ -93,4 +131,6 @@ export function wasActionPressed(action) {
 // See game.js's loop: a rendered frame does not always run a step.
 export function clearFrameInput() {
   pressedThisFrame.clear();
+  pointer.pressed = false;
+  pointer.released = false;
 }

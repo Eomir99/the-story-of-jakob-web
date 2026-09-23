@@ -1,6 +1,6 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { getImage } from './assets.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
@@ -21,8 +21,23 @@ import {
   damageGraduationBoss,
   drawGraduationBoss,
   drawGraduationBossHpBar,
+  drawGraduationProjectile,
+  drawGraduationFloorWarnings,
+  clearGraduationHazards,
+  graduationSlabHitsPlayer,
 } from './bosses.js';
-import { LEVEL, LEVEL_BOUNDS, entryY } from './level.js';
+import { LEVEL, LEVEL_BOUNDS, DEBUG_START_X, entryY } from './level.js';
+import {
+  createReception,
+  skipReception,
+  updateReception,
+  applyReceptionWalls,
+  receptionPlatforms,
+  receptionCameraFraming,
+  drawReceptionScenery,
+  drawReceptionSpeech,
+  drawReceptionHud,
+} from './reception.js';
 
 const FIXED_DT = 1 / TIMESTEP.hz;
 
@@ -128,8 +143,15 @@ let researchGolemBoundaryX = null;
 // comic. See level.js RESEARCH_GOLEM_EXIT_WALK_TRIGGER_X and
 // updateResearchGolemExitWalk.
 let researchGolemExitWalkTriggerX = null;
+// The Graduation arena's camera frame (level.js GRADUATION_ARENA_FRAME,
+// carried on the boss-graduation entry as arenaFrame): { left, right, top }
+// in world space, or null. See graduationArenaFraming().
+let graduationArenaFrame = null;
 let exitWalkActive = false;
 let exitWalkTimer = 0;
+// The Clinic reception encounter (reception.js), or null if the level has
+// none. reception.js owns all of its state; game.js only calls in.
+let reception = null;
 let spawnPoint;
 // Hitstop (config.js HITSTOP): while this is running the fixed step does
 // nothing at all -- no movement, no timers, no attacks. One counter, not
@@ -171,6 +193,7 @@ export function startGame(canvas) {
   player = createPlayer(spawnPoint.x, spawnPoint.y);
   camera = { x: 0, y: 0, zoom: 1 };
   projectiles = [];
+  applyDebugStart();
   setGameState(STATE.TITLE);
 
   accumulator = 0;
@@ -187,7 +210,51 @@ export function startGame(canvas) {
 export function startFromTitle() {
   if (gameState !== STATE.TITLE) return;
   resetInput();
+  // The ?start= development shortcut goes straight to gameplay.
+  if (debugStartActive) {
+    setGameState(STATE.PLAYING);
+    return;
+  }
   enterComic('intro', STATE.PLAYING);
+}
+
+// Development shortcut (level.js DEBUG_START_X): with ?start=<name> in the
+// URL, stand the player at that x with everything before it already done --
+// one-shot sequences spent, bosses and enemies behind it dead, pickups
+// behind it collected, checkpoints behind it reached. Without the query
+// parameter this does nothing.
+let debugStartActive = false;
+function applyDebugStart() {
+  const params = new URLSearchParams(window.location.search);
+  const name = params.get('start');
+  const startX = name ? DEBUG_START_X[name] : undefined;
+  if (startX === undefined) return;
+  debugStartActive = true;
+
+  spawnPoint = { x: startX, y: spawnPoint.y };
+  player.x = startX;
+  camera.x = startX - CANVAS.width / 2;
+  if (utspringTrigger && utspringTrigger.x < startX) utspringPhase = UTSPRING.DONE;
+  while (bossApproaches[nextBossApproachIndex] && bossApproaches[nextBossApproachIndex].x < startX) nextBossApproachIndex += 1;
+  while (comicTriggers[nextComicTriggerIndex] && comicTriggers[nextComicTriggerIndex].x < startX) nextComicTriggerIndex += 1;
+  while (checkpoints[nextCheckpointIndex] && checkpoints[nextCheckpointIndex].x < startX) nextCheckpointIndex += 1;
+  for (const enemy of enemies) if (enemy.x < startX) enemy.alive = false;
+  for (const bossEntity of [boss, graduationBoss]) if (bossEntity && bossEntity.activationX < startX) bossEntity.alive = false;
+  if (researchGolemExitX !== null && researchGolemExitX < startX) {
+    researchGolemBoundaryX = researchGolemExitX;
+    researchGolemExitWalkTriggerX = null;
+  }
+  for (const pickup of pickups) {
+    if (pickup.x < startX) {
+      pickup.collected = true;
+      applyPickup(player, pickup.outfit);
+    }
+  }
+  if (utspringPhase === UTSPRING.DONE && player.outfit === 'none') applyPickup(player, 'studentmossa');
+  if (reception && reception.triggerX < startX) skipReception(reception);
+  // &round=N: the Clinic reception starts at round N after its intro.
+  const round = Number(params.get('round'));
+  if (reception && round > 1) reception.debugStartRound = round;
 }
 
 // Called by comics.js when the comic viewer's last panel is dismissed
@@ -347,20 +414,19 @@ function endUtspring() {
 // 'boss-approach' entries) rather than a cutscene framework (AGENTS.md
 // §7.10).
 //
-// Two shapes of that sequence exist, chosen per entry by whether it carries
-// a revealCameraX (level.js):
+// Both bosses run the same three phases -- REVEAL, REACT, WALK: the player
+// stops dead, the camera glides on its own to an authored framing of the
+// venue (level.js revealCameraX) and holds there, Jakob reacts, then he
+// walks the rest of the way to the entrance with the camera still locked.
+// No beat after the walk -- the comic opens the instant he reaches it.
 //
-//   Research Golem (has revealCameraX + reactBark) -- REVEAL, REACT, WALK:
-//     the player stops dead, the camera glides on its own to an authored
-//     framing of the façade and holds there, Jakob reacts, then he walks
-//     the rest of the way to the door with the camera still locked. No
-//     beat after the walk -- the comic opens the instant he reaches it.
-//   Graduation (neither field set) -- WALK, BEAT: the original, simpler
-//     beat, unchanged. Its own venue art is future work (PLAN.md 6.8b), so
-//     it keeps walking immediately and reveals its arena/boss framing the
-//     way this always worked, with a settle beat before the comic.
-const APPROACH = { REVEAL: 'reveal', REACT: 'react', WALK: 'walk', BEAT: 'beat' };
-let bossApproaches; // sorted ascending by x: [{ x, comicId, arenaEntranceX, boss, revealCameraX?, reactBark? }]
+// The one difference is the reaction: the Research Golem's is a bark
+// (reactBark, held BOSS_APPROACH.reactDuration); Graduation's is a short
+// run of thought bubbles over Jakob (thoughts, each held
+// GRADUATION_ENTRANCE.thoughtDuration -- see drawApproachThought). An
+// entry's walkDuration, when set, replaces BOSS_APPROACH.walkDuration.
+const APPROACH = { REVEAL: 'reveal', REACT: 'react', WALK: 'walk' };
+let bossApproaches; // sorted ascending by x: [{ x, comicId, arenaEntranceX, boss, revealCameraX, reactBark?, thoughts?, walkDuration? }]
 let nextBossApproachIndex;
 let approachPhase = null; // null whenever no approach is running
 let approachTimer = 0;
@@ -385,7 +451,7 @@ function updateBossApproach(dt) {
     // already gliding camera.x toward it every frame -- no separate pan
     // code needed here, just the wait.
     if (approachTimer >= BOSS_APPROACH.revealDuration) {
-      spawnBark(player, activeApproach.reactBark);
+      if (activeApproach.reactBark) spawnBark(player, activeApproach.reactBark);
       approachPhase = APPROACH.REACT;
       approachTimer = 0;
     }
@@ -395,7 +461,7 @@ function updateBossApproach(dt) {
   if (approachPhase === APPROACH.REACT) {
     // Camera stays locked at the same reveal target throughout -- nothing
     // to do here but hold for the reaction to read, then start walking.
-    if (approachTimer >= BOSS_APPROACH.reactDuration) {
+    if (approachTimer >= reactDuration(activeApproach)) {
       player.autoRun = PLAYER.moveSpeed;
       approachPhase = APPROACH.WALK;
       approachTimer = 0;
@@ -403,28 +469,22 @@ function updateBossApproach(dt) {
     return;
   }
 
-  if (approachPhase === APPROACH.WALK) {
-    if (approachTimer >= BOSS_APPROACH.walkDuration) {
-      player.autoRun = 0; // arrival: comes to a stop
-      // Lands exactly on the arena's own activation line -- see the note
-      // on RESEARCH_GOLEM_TAKEOVER_X/GRADUATION_APPROACH_X in level.js --
-      // so the real fight (checkBossActivation) starts the instant control
-      // returns from the comic, with no further walking needed.
-      player.x = activeApproach.arenaEntranceX;
-      if (activeApproach.revealCameraX !== undefined) {
-        // Research Golem: no post-walk beat -- "comic ends → gameplay
-        // immediately" starts with the walk itself ending at the door.
-        endBossApproach();
-      } else {
-        approachPhase = APPROACH.BEAT;
-        approachTimer = 0;
-      }
-    }
-    return;
+  // WALK
+  if (approachTimer >= (activeApproach.walkDuration ?? BOSS_APPROACH.walkDuration)) {
+    player.autoRun = 0; // arrival: comes to a stop
+    // Lands exactly on the arena's own activation line -- see the note on
+    // RESEARCH_GOLEM_TAKEOVER_X/GRADUATION_TAKEOVER_X in level.js -- so the
+    // real fight (checkBossActivation) starts the instant control returns
+    // from the comic, with no further walking needed. No post-walk beat:
+    // "comic ends → gameplay immediately" starts with the walk itself
+    // ending at the door.
+    player.x = activeApproach.arenaEntranceX;
+    endBossApproach();
   }
+}
 
-  // BEAT: stopped, a brief pause before the comic opens (Graduation only).
-  if (approachTimer >= BOSS_APPROACH.beatDuration) endBossApproach();
+function reactDuration(approach) {
+  return approach.thoughts ? approach.thoughts.length * GRADUATION_ENTRANCE.thoughtDuration : BOSS_APPROACH.reactDuration;
 }
 
 function beginBossApproach(trigger) {
@@ -438,30 +498,94 @@ function beginBossApproach(trigger) {
   setInputSuppressed(true);
   player.invincible = true;
 
-  if (trigger.revealCameraX !== undefined) {
-    // Research Golem: stop dead first -- the camera moves, not Jakob.
-    // arenaLockCameraX is the same override updateCamera already respects
-    // for the boss-fight framing further down this file; reusing it here
-    // is what "the simplest boss-specific scripted movement possible"
-    // (task brief) means -- no second camera system.
-    player.autoRun = 0;
-    approachPhase = APPROACH.REVEAL;
-    arenaLockCameraX = trigger.revealCameraX;
-    return;
-  }
-
-  // Graduation's original flow: walk immediately, camera reveals the
-  // arena/boss framing early so it's already in view by the time the
-  // character stops and the comic opens.
-  approachPhase = APPROACH.WALK;
-  player.autoRun = PLAYER.moveSpeed; // forward at normal speed -- walking, not running
-  const bossEntity = bossFor(trigger.boss);
-  const arenaCenterX = (trigger.arenaEntranceX + bossEntity.x + bossEntity.width) / 2;
-  arenaLockCameraX = arenaCenterX - CANVAS.width / 2;
+  // Stop dead first -- the camera moves, not Jakob. arenaLockCameraX is
+  // the same override updateCamera already respects for the boss-fight
+  // framing further down this file; reusing it here is what "the simplest
+  // boss-specific scripted movement possible" (task brief) means -- no
+  // second camera system.
+  player.autoRun = 0;
+  approachPhase = APPROACH.REVEAL;
+  arenaLockCameraX = trigger.revealCameraX;
 }
 
-function bossFor(bossKey) {
-  return bossKey === 'research-golem' ? boss : graduationBoss;
+// Graduation's thought bubbles (level.js 'boss-approach' thoughts): one at
+// a time over Jakob during REACT, each for GRADUATION_ENTRANCE
+// .thoughtDuration. World space, after the player, like the barks.
+function drawApproachThought(ctx) {
+  if (approachPhase !== APPROACH.REACT || !activeApproach.thoughts) return;
+  const index = Math.min(activeApproach.thoughts.length - 1, Math.floor(approachTimer / GRADUATION_ENTRANCE.thoughtDuration));
+  drawThoughtBubble(ctx, activeApproach.thoughts[index], player.x + player.width / 2, player.y);
+}
+
+// A cloud: a rounded body ringed with scallops, and two small puffs
+// trailing down to Jakob's head. Every circle is stroked first and filled
+// second, so the fills cover the inner halves of the outlines and only the
+// cloud's outer edge is left drawn.
+function drawThoughtBubble(ctx, text, headX, headTopY) {
+  const spec = GRADUATION_ENTRANCE.thoughtBubble;
+  ctx.save();
+  ctx.font = spec.font;
+  const lines = wrapThoughtText(ctx, text, spec.maxWidth);
+  const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
+  const width = textWidth + spec.paddingX * 2;
+  const height = lines.length * spec.lineHeight + spec.paddingY * 2;
+  const bottom = headTopY - spec.gapAboveHead;
+  const left = headX + spec.offsetX - width / 2;
+  const top = bottom - height;
+
+  const circles = [];
+  const r = spec.bump;
+  const stepsX = Math.max(2, Math.round(width / (r * 1.6)));
+  const stepsY = Math.max(1, Math.round(height / (r * 1.6)));
+  for (let i = 0; i <= stepsX; i++) {
+    const x = left + (width * i) / stepsX;
+    circles.push([x, top, r], [x, bottom, r]);
+  }
+  for (let i = 1; i < stepsY; i++) {
+    const y = top + (height * i) / stepsY;
+    circles.push([left, y, r], [left + width, y, r]);
+  }
+  // The trailing puffs, from the cloud down toward the head.
+  circles.push([headX + spec.offsetX * 0.35, bottom + r * 1.5, r * 0.55]);
+  circles.push([headX + spec.offsetX * 0.1, bottom + r * 2.9, r * 0.35]);
+
+  ctx.lineWidth = spec.borderWidth * 2; // half of it ends up hidden under the fill
+  ctx.strokeStyle = spec.border;
+  for (const [x, y, radius] of circles) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.stroke();
+  }
+  ctx.strokeRect(left, top, width, height);
+  ctx.fillStyle = spec.fill;
+  for (const [x, y, radius] of circles) {
+    ctx.beginPath();
+    ctx.arc(x, y, radius, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.fillRect(left, top, width, height);
+
+  ctx.fillStyle = spec.textColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  lines.forEach((line, i) => ctx.fillText(line, left + width / 2, top + spec.paddingY + i * spec.lineHeight + 2));
+  ctx.restore();
+}
+
+function wrapThoughtText(ctx, text, maxWidth) {
+  const lines = [];
+  let current = '';
+  for (const word of text.split(' ')) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (current && ctx.measureText(candidate).width > maxWidth) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+  if (current) lines.push(current);
+  return lines;
 }
 
 function endBossApproach() {
@@ -638,8 +762,10 @@ function loadLevel() {
   researchGolemExitX = null;
   researchGolemExitWalkTriggerX = null;
   researchGolemBoundaryX = null;
+  graduationArenaFrame = null;
   exitWalkActive = false;
   exitWalkTimer = 0;
+  reception = null;
 
   for (const entry of LEVEL) {
     const y = entryY(entry);
@@ -657,6 +783,7 @@ function loadLevel() {
       researchGolemExitWalkTriggerX = entry.exitWalkTriggerX ?? null;
     } else if (entry.type === 'boss-graduation') {
       graduationBoss = createGraduationBoss(entry.x, y, entry.activationX);
+      graduationArenaFrame = entry.arenaFrame ?? null;
     } else if (entry.type === 'platform') {
       platforms.push({ x: entry.x, y, width: PLATFORM.width, height: PLATFORM.height, walkway: entry.walkway === true });
     } else if (entry.type === 'pickup') {
@@ -672,17 +799,20 @@ function loadLevel() {
       utspringTrigger = { x: entry.x, markY: y };
     } else if (entry.type === 'comic-trigger') {
       triggers.push({ x: entry.x, comicId: entry.comicId, next: entry.next });
+    } else if (entry.type === 'reception-encounter') {
+      reception = createReception(entry);
     } else if (entry.type === 'boss-approach') {
       approaches.push({
         x: entry.x,
         comicId: entry.comicId,
         arenaEntranceX: entry.arenaEntranceX,
         boss: entry.boss,
-        // Both undefined unless the level entry sets them (Research Golem
-        // only, currently) -- their presence is what tells
-        // beginBossApproach to run the camera-reveal sequence at all.
         revealCameraX: entry.revealCameraX,
+        // The reaction: a bark (Research Golem) or thought bubbles
+        // (Graduation). walkDuration is optional -- see updateBossApproach.
         reactBark: entry.reactBark,
+        thoughts: entry.thoughts,
+        walkDuration: entry.walkDuration,
       });
     }
   }
@@ -784,13 +914,17 @@ function step(dt) {
   updateUtspring(dt);
   updateBossApproach(dt);
   updateResearchGolemExitWalk(dt);
-  const spawned = updatePlayer(player, dt, spawnPoint, platforms);
+  updateReception(reception, dt, player);
+  const extraPlatforms = receptionPlatforms(reception);
+  const spawned = updatePlayer(player, dt, spawnPoint, extraPlatforms ? platforms.concat(extraPlatforms) : platforms);
   if (spawned.length > 0) projectiles.push(...spawned);
   checkBossActivation();
   checkEnemyActivation();
   applySolidWalls();
   applyArenaWall();
   applyResearchGolemBoundary();
+  applyGraduationBoundary();
+  applyReceptionWalls(reception, player);
   updateProjectiles(dt);
   for (const enemy of enemies) {
     const enemySpawned = updateEnemy(enemy, dt, player);
@@ -798,11 +932,13 @@ function step(dt) {
   }
   const bossSpawned = updateResearchGolem(boss, dt);
   if (bossSpawned.length > 0) projectiles.push(...bossSpawned);
-  const graduationSpawned = updateGraduationBoss(graduationBoss, dt);
+  const graduationSpawned = updateGraduationBoss(graduationBoss, dt, player);
   if (graduationSpawned.length > 0) projectiles.push(...graduationSpawned);
   const hpBeforeHits = player.hp;
   resolveProjectileHits();
   resolveEnemyContact();
+  // Graduation's rising slabs: timed damage zones, not projectiles.
+  if (graduationSlabHitsPlayer(graduationBoss, player)) damagePlayer(player, GRADUATION.contactDamage);
   if (player.hp < hpBeforeHits) requestShake(SHAKE.playerDamage);
   watchBossPhaseChanges();
   resolvePickups();
@@ -840,10 +976,13 @@ function advanceCheckpoint() {
 // immediately walk the player back into fire they never had a chance to
 // see. Fast respawn and the boss keeping its HP are already true by
 // construction -- respawnPlayer (player.js) never touches boss state, and
-// PLAYER.respawnDelay is short.
+// PLAYER.respawnDelay is short. Graduation also has attacks still to come
+// that are not projectiles yet (queued shots, a wind-up in progress);
+// clearGraduationHazards drops those too.
 function handleDeathTransition() {
   if (player.dead && !wasPlayerDead) {
     projectiles = projectiles.filter((projectile) => projectile.owner === 'player');
+    clearGraduationHazards(graduationBoss);
   }
   wasPlayerDead = player.dead;
 }
@@ -883,11 +1022,23 @@ function activateBossIfReached(bossEntity, activate) {
   if (!bossEntity || bossEntity.active || !bossEntity.alive) return;
   if (player.x < bossEntity.activationX) return;
 
-  activate(bossEntity); // task 1: starts the first wind-up immediately
+  activate(bossEntity, player); // task 1: starts the first wind-up immediately
   arenaWallX = bossEntity.activationX;
   lockedBoss = bossEntity;
   const arenaCenterX = (arenaWallX + bossEntity.x + bossEntity.width) / 2;
   arenaLockCameraX = arenaCenterX - CANVAS.width / 2;
+  // The Graduation arena is framed zoomed out (graduationArenaFraming).
+  // The player has just stepped out of the comic into it, so the camera
+  // cuts straight to that framing rather than gliding in from the portal
+  // shot outside -- that shot belongs to a different place.
+  if (bossEntity === graduationBoss) {
+    const framing = graduationArenaFraming();
+    if (framing) {
+      camera.x = framing.x;
+      camera.y = framing.y;
+      camera.zoom = framing.zoom;
+    }
+  }
   // Backtrack repair task (§7): this venue's own boundary, independent of
   // arenaWallX above -- only the Research Golem needs one that outlives the
   // fight (see applyResearchGolemBoundary). Graduation is untouched.
@@ -907,6 +1058,15 @@ function applyResearchGolemBoundary() {
   if (researchGolemBoundaryX === null) return;
   if (researchGolemExitX !== null && player.x >= researchGolemExitX) researchGolemBoundaryX = researchGolemExitX;
   if (player.x < researchGolemBoundaryX) player.x = researchGolemBoundaryX;
+}
+
+// The Graduation arena is one-way too: once the fight has started, the
+// player can never walk back out through the portal -- not during the
+// fight (arenaWallX already covers that) and not after it, when arenaWallX
+// drops. Behind the portal is the Haga street, not more arena.
+function applyGraduationBoundary() {
+  if (!graduationBoss || !graduationBoss.active) return;
+  if (player.x < graduationBoss.activationX) player.x = graduationBoss.activationX;
 }
 
 // Post-boss exit repair task (§9): a short, quiet auto-walk through the
@@ -958,13 +1118,20 @@ function updateProjectiles(dt) {
     if (projectile.gravity) projectile.vy += projectile.gravity * dt;
     projectile.y += (projectile.vy || 0) * dt;
     projectile.life -= dt;
+    // Presentation clock for the authored boss projectile art. Only boss
+    // shots carry it; everything else leaves it undefined and draws the
+    // plain rectangle below.
+    if (projectile.age !== undefined) projectile.age += dt;
   }
   // Task B: culled the instant a projectile leaves the camera's active
   // area, regardless of remaining lifetime -- a correctness fix on its
   // own, since nothing should be able to travel a whole section of the
   // level, independent of whether the boss that fired it was dormant.
-  const cullLeft = camera.x - PROJECTILE_CULL_MARGIN;
-  const cullRight = camera.x + CANVAS.width + PROJECTILE_CULL_MARGIN;
+  // Measured against what is actually on screen, so a zoomed-out camera
+  // (the Graduation arena) doesn't cull shots while they are still in view.
+  const view = visibleWorldRect();
+  const cullLeft = view.left - PROJECTILE_CULL_MARGIN;
+  const cullRight = view.left + view.width + PROJECTILE_CULL_MARGIN;
   projectiles = projectiles.filter(
     (projectile) =>
       projectile.life > 0 &&
@@ -977,7 +1144,10 @@ function updateProjectiles(dt) {
       // This cannot change what can hit anyone: the player's feet rest on
       // groundY, so a projectile whose top is at or below groundY is
       // entirely beneath them and could never have overlapped.
-      projectile.y < WORLD.groundY
+      projectile.y < WORLD.groundY &&
+      // Graduation's falling books stop AT the floor: gone the step their
+      // bottom edge reaches it, rather than sliding into the ground.
+      !(projectile.removeOnLanding && projectile.y + projectile.height >= WORLD.groundY)
   );
 }
 
@@ -1124,8 +1294,14 @@ function updateCamera(dt) {
   const viewCenterX = camera.x + CANVAS.width / 2;
   const viewCenterY = camera.y + CANVAS.height / 2;
 
+  // The reception encounter frames its whole arena -- x, y and zoom
+  // together -- while it runs (reception.js receptionCameraFraming).
+  const framing = receptionCameraFraming(reception) ?? graduationArenaFraming();
+
   let desiredX = camera.x;
-  if (arenaLockCameraX !== null) {
+  if (framing) {
+    desiredX = framing.x;
+  } else if (arenaLockCameraX !== null) {
     // Task B: while a boss arena is active, the camera holds a fixed
     // framing of the whole arena instead of following the player, so
     // nothing scrolls out of view while dodging.
@@ -1138,7 +1314,8 @@ function updateCamera(dt) {
 
   let desiredY = camera.y;
   const dy = targetCenterY - viewCenterY;
-  if (dy > halfDeadzoneH) desiredY = camera.y + (dy - halfDeadzoneH);
+  if (framing) desiredY = framing.y;
+  else if (dy > halfDeadzoneH) desiredY = camera.y + (dy - halfDeadzoneH);
   else if (dy < -halfDeadzoneH) desiredY = camera.y + (dy + halfDeadzoneH);
 
   const ease = 1 - Math.exp(-CAMERA.smoothing * dt);
@@ -1149,9 +1326,24 @@ function updateCamera(dt) {
   // built for it: the camera transform in render() already applies
   // camera.zoom, so this is one target value, eased by the same smoothing
   // every other camera motion uses.
-  const targetZoom = isUtspringRunning() ? STAIRCASE.zoomOut : 1;
+  let targetZoom = isUtspringRunning() ? STAIRCASE.zoomOut : 1;
+  if (framing) targetZoom = framing.zoom;
   const zoomEase = 1 - Math.exp(-CAMERA.zoomSmoothing * dt);
   camera.zoom += (targetZoom - camera.zoom) * zoomEase;
+}
+
+// The Graduation arena's camera: zoomed out to show the whole arena art,
+// x, y and zoom together, the same shape as receptionCameraFraming. Held
+// for as long as the player is inside the arena -- the fight, the armour
+// and the final comic all happen inside this one shot.
+function graduationArenaFraming() {
+  if (!graduationArenaFrame || !graduationInterior()) return null;
+  const frame = graduationArenaFrame;
+  const zoom = CANVAS.width / (frame.right - frame.left);
+  // visibleWorldRect: the view's left/top edge is camera + (size - size / zoom) / 2.
+  const x = frame.left - (CANVAS.width - CANVAS.width / zoom) / 2;
+  const y = frame.top - (CANVAS.height - CANVAS.height / zoom) / 2;
+  return { x, y, zoom };
 }
 
 // Which section a world x falls in. Sections are contiguous and sorted,
@@ -1177,6 +1369,59 @@ function advancePacingTimers(dt) {
 // The world rectangle currently on screen. Everything below fills exactly
 // this, so a background costs the same whether its section is 2,000px
 // long or 20,000.
+// The ground: the flat colour slab it has always been, with the shared
+// cobblestone-and-dirt artwork repeated across it (config.js
+// WORLD.groundTexture). The slab stays underneath as the base fill, so
+// the frames before the asset loads look exactly like they used to and a
+// failed load can never show sky below the floor.
+//
+// Anchored to WORLD.groundY, not the other way round: the image's top row
+// is the top of the cobblestones, so drawing it AT groundY puts the
+// stones' surface on the collision line and the player's feet on the
+// stones. Tiles are 1:1 at native size (no runtime scale factor, no
+// resampling) and their positions come from world x via floor division,
+// never a running counter -- so the art cannot drift relative to the
+// collision surface as the camera moves, and a tile lands in the same
+// place whichever direction the player arrived from.
+//
+// Only the visible span is tiled, the same way the background layers
+// already limit themselves, with the same screen-shake bleed so a shake
+// cannot slide the tiles off the edge of the frame.
+function drawGround(ctx) {
+  const insideGraduation = graduationInterior();
+  const texture = insideGraduation
+    ? WORLD.graduationGroundTexture
+    : researchGolemInterior() ? WORLD.arenaGroundTexture : WORLD.groundTexture;
+  // The Graduation floor's tiling starts at the arena art's own left edge
+  // (config.js WORLD.graduationGroundTexture); every other floor tiles from
+  // world x 0.
+  const originX = insideGraduation ? graduationArenaFrame.left : 0;
+
+  ctx.fillStyle = texture.fillColor ?? WORLD.groundColor;
+  ctx.fillRect(
+    LEVEL_BOUNDS.renderLeft,
+    WORLD.groundY,
+    LEVEL_BOUNDS.renderRight - LEVEL_BOUNDS.renderLeft,
+    WORLD.groundDepth
+  );
+
+  const image = getImage(texture.path);
+  if (!image) return; // not loaded (or failed) yet -- the slab above stands in
+
+  const view = visibleWorldRect();
+  const bleed = SHAKE.maxAmplitude * 2;
+  const left = Math.max(LEVEL_BOUNDS.renderLeft, view.left - bleed);
+  const right = Math.min(LEVEL_BOUNDS.renderRight, view.left + view.width + bleed);
+
+  for (
+    let tileX = originX + Math.floor((left - originX) / texture.tileWidth) * texture.tileWidth;
+    tileX < right;
+    tileX += texture.tileWidth
+  ) {
+    ctx.drawImage(image, tileX, WORLD.groundY, texture.tileWidth, texture.tileHeight);
+  }
+}
+
 function visibleWorldRect() {
   const width = CANVAS.width / camera.zoom;
   const height = CANVAS.height / camera.zoom;
@@ -1200,12 +1445,12 @@ function drawBackground(ctx) {
     const boundary = backgroundSections[i].xEnd;
     if (refX > boundary - half && refX < boundary + half) {
       const blend = (refX - (boundary - half)) / BACKGROUND.blendBandWidth; // 0 -> 1
-      drawBackgroundDepths(ctx, backgroundSections[i].background, backgroundSections[i + 1].background, blend);
+      drawBackgroundDepths(ctx, backgroundSections[i], backgroundSections[i + 1], blend);
       return;
     }
   }
 
-  drawBackgroundDepths(ctx, backgroundSections[sectionIndexAt(refX)].background);
+  drawBackgroundDepths(ctx, backgroundSections[sectionIndexAt(refX)]);
 }
 
 // Composite the transition within each depth, then draw depths globally.
@@ -1221,13 +1466,17 @@ function backgroundDepth(layer) {
   return 'near';
 }
 
-function drawBackgroundDepths(ctx, outgoingKey, incomingKey, blend = 0) {
-  const outgoing = BACKGROUNDS[outgoingKey]?.layers ?? [];
-  const incoming = BACKGROUNDS[incomingKey]?.layers ?? [];
-  if (!incomingKey) {
+// Takes the section objects, not just their background keys, because a
+// layer with an opening tile (drawImageTile) has to know where its own
+// section starts in the world -- that is the one thing about a background
+// that is level layout rather than a property of the background itself.
+function drawBackgroundDepths(ctx, outgoingSection, incomingSection, blend = 0) {
+  const outgoing = BACKGROUNDS[outgoingSection.background]?.layers ?? [];
+  const incoming = BACKGROUNDS[incomingSection?.background]?.layers ?? [];
+  if (!incomingSection) {
     for (const depth of backgroundDepths) {
       for (const layer of outgoing) {
-        if (backgroundDepth(layer) === depth) drawBackgroundLayer(ctx, layer);
+        if (backgroundDepth(layer) === depth) drawBackgroundLayer(ctx, layer, outgoingSection.xStart);
       }
     }
     return;
@@ -1243,13 +1492,14 @@ function drawBackgroundDepths(ctx, outgoingKey, incomingKey, blend = 0) {
   const transform = ctx.getTransform();
   for (const depth of backgroundDepths) {
     for (const [index, layers] of [outgoing, incoming].entries()) {
+      const sectionStartX = (index === 0 ? outgoingSection : incomingSection).xStart;
       const scratch = backgroundBlendCanvases[index].getContext('2d');
       scratch.resetTransform();
       scratch.clearRect(0, 0, CANVAS.width, CANVAS.height);
       scratch.imageSmoothingEnabled = false;
       scratch.setTransform(transform);
       for (const layer of layers) {
-        if (backgroundDepth(layer) === depth) drawBackgroundLayer(scratch, layer);
+        if (backgroundDepth(layer) === depth) drawBackgroundLayer(scratch, layer, sectionStartX);
       }
     }
     const mixed = backgroundBlendCanvases[2].getContext('2d');
@@ -1274,7 +1524,7 @@ function drawBackgroundDepths(ctx, outgoingKey, incomingKey, blend = 0) {
 // back to the legacy value, then to ordinary world tracking (1). Grounded
 // architecture uses parallaxY: 1, making shiftY zero so its baseline moves
 // through screen space exactly as WORLD.groundY does when camera.y changes.
-function drawBackgroundLayer(ctx, layer) {
+function drawBackgroundLayer(ctx, layer, sectionStartX = 0) {
   const view = visibleWorldRect();
   const parallaxX = layer.parallaxX ?? layer.parallax ?? 1;
   const parallaxY = layer.parallaxY ?? layer.parallax ?? 1;
@@ -1309,7 +1559,13 @@ function drawBackgroundLayer(ctx, layer) {
   } else if (source.type === 'silhouette') {
     drawSilhouette(ctx, source, left, right);
   } else if (source.type === 'image') {
-    drawImageTile(ctx, source, left, right);
+    // A parallax layer tiles in its OWN shifted space, not world space: a
+    // point t in it lands on screen at t + camera.x * (1 - parallaxX). So
+    // anchoring the opening tile to the section's world start means
+    // sectionStartX * parallaxX, which is the t that puts the tile's left
+    // edge exactly on the section boundary as the camera reaches it. Using
+    // the raw world x here put the tile most of a screen away.
+    drawImageTile(ctx, source, left, right, sectionStartX * parallaxX);
   }
 
   ctx.restore();
@@ -1348,23 +1604,58 @@ function drawSilhouette(ctx, source, left, right) {
 // resolution (scripts/runtime-assets.py RUNTIME_SIZE) and is scaled back
 // up to displayHeight here, the same way landmarks already scale to their
 // own configured width/height regardless of native resolution.
-function drawImageTile(ctx, source, left, right) {
+// An `openingPath` layer (USA) plays one authored establishing tile at the
+// section's own start and then repeats `path` for the rest of it. That is
+// the only case where tiling is anchored to the section rather than to
+// world zero: an opening tile has to land on the section boundary, so its
+// index 0 is measured from tileOriginX (the caller has already converted
+// the section's world start into this layer's parallax space). Every other
+// layer keeps the world-anchored parity it has always had, or its own fixed
+// `tileOffset` if it names one -- see the note above originX below.
+function drawImageTile(ctx, source, left, right, tileOriginX = 0) {
   const image = resolveBackgroundImage(source);
   if (!image) return; // not loaded (or failed) yet -- draw nothing this frame, not an error
-  const { tileWidth, displayHeight, baselineY } = source;
+  const { tileWidth, displayHeight, baselineY, openingPath, tileOffset } = source;
   // Continuous scenery: only landmarks consult local walkway heights.
   const drawY = WORLD.groundY - baselineY;
 
-  for (let index = Math.floor(left / tileWidth); index * tileWidth < right; index++) {
-    const tileX = index * tileWidth;
-    const mirrored = (((index % 2) + 2) % 2) === 1; // floor-mod: correct for negative indices too
+  // A layer without an opening tile keeps the world-anchored parity it has
+  // always had (originX 0) unless it names its own fixed `tileOffset` -- a
+  // constant phase shift, in this layer's own shifted space, that keeps two
+  // strips sharing a section (e.g. goteborg-city's far/mid) from seaming at
+  // the same world x. Two layers with close tileWidths both anchored at 0
+  // put their transparent tile edges at (almost) the same spot every
+  // repeat, so neither ever covers the other's gap; a fixed offset applies
+  // everywhere that source is drawn, not just from one section's start,
+  // which is what a property of the layer itself should do.
+  const originX = openingPath ? tileOriginX : (tileOffset ?? 0);
+  // Resolved once, not per tile: at most one tile in a frame is the opening.
+  const openingImage = openingPath
+    ? resolveBackgroundImage({ ...source, path: openingPath })
+    : null;
+
+  for (let index = Math.floor((left - originX) / tileWidth); originX + index * tileWidth < right; index++) {
+    const tileX = originX + index * tileWidth;
+    const opening = openingPath && index === 0;
+    if (opening && !openingImage) continue; // same "skip a frame" rule as above
+    const tile = opening ? openingImage : image;
+    // The opening strip is its own piece of art with its own ground line,
+    // so it carries its own baseline. Without it the two strips in this
+    // layer would meet the world ground at different heights and one of
+    // them would float (config.js openingBaselineY).
+    const tileDrawY = opening && source.openingBaselineY !== undefined
+      ? WORLD.groundY - source.openingBaselineY
+      : drawY;
+    // The opening tile is always drawn as authored; the repeats keep the
+    // alternating mirror that makes each seam meet its own reflection.
+    const mirrored = !opening && (((index % 2) + 2) % 2) === 1; // floor-mod: correct for negative indices too
     ctx.save();
     if (mirrored) {
       ctx.translate(tileX + tileWidth, 0);
       ctx.scale(-1, 1);
-      ctx.drawImage(image, 0, drawY, tileWidth, displayHeight);
+      ctx.drawImage(tile, 0, tileDrawY, tileWidth, displayHeight);
     } else {
-      ctx.drawImage(image, tileX, drawY, tileWidth, displayHeight);
+      ctx.drawImage(tile, tileX, tileDrawY, tileWidth, displayHeight);
     }
     ctx.restore();
   }
@@ -1449,9 +1740,19 @@ function researchGolemInterior() {
   return player.x >= boss.activationX && player.x < researchGolemExitX;
 }
 
+// The Graduation venue's equivalent: the Haga street and the portal are
+// drawn left of the activation line (the portal's opening), the arena from
+// it onwards. The approach walk ends exactly on that line and the comic
+// opens in the same step, so the arena is first drawn after the comic.
+function graduationInterior() {
+  if (!graduationBoss || !graduationArenaFrame) return false;
+  return player.x >= graduationBoss.activationX;
+}
+
 function drawLandmarks(ctx) {
   const view = visibleWorldRect();
   const insideResearchGolem = researchGolemInterior();
+  const insideGraduation = graduationInterior();
   for (const placement of landmarks) {
     // Explicit state, not draw-order masking (repair task): the façade (in
     // either its entrance or exit crop) and the enclosed arena must never
@@ -1459,6 +1760,8 @@ function drawLandmarks(ctx) {
     // boxes reach into each other's world space.
     if (insideResearchGolem && placement.landmark.startsWith('research-golem-facade')) continue;
     if (!insideResearchGolem && placement.landmark === 'research-golem-arena') continue;
+    if (insideGraduation && placement.landmark === 'graduation-portal') continue;
+    if (!insideGraduation && placement.landmark === 'graduation-arena') continue;
 
     const spec = LANDMARK.types[placement.landmark];
     if (!spec) continue;
@@ -1513,17 +1816,15 @@ function render() {
   drawBackground(ctx);
   drawLandmarks(ctx);
 
-  ctx.fillStyle = WORLD.groundColor;
-  ctx.fillRect(
-    LEVEL_BOUNDS.renderLeft,
-    WORLD.groundY,
-    LEVEL_BOUNDS.renderRight - LEVEL_BOUNDS.renderLeft,
-    WORLD.groundDepth
-  );
+  drawGround(ctx);
 
   drawPlatforms(ctx);
+  drawGraduationFloorWarnings(ctx, graduationBoss);
+  drawReceptionScenery(ctx, reception);
   drawPickups(ctx);
   drawPlayer(ctx, player);
+  drawApproachThought(ctx);
+  drawReceptionSpeech(ctx, reception, player, camera.zoom, visibleWorldRect());
   for (const enemy of enemies) drawEnemy(ctx, enemy);
   drawResearchGolem(ctx, boss);
   drawResearchGolemHpBar(ctx, boss);
@@ -1538,6 +1839,7 @@ function render() {
   // Screen space, after the camera transform is unwound: the HUD must not
   // pan or scale with the world (notably during the staircase pull-back).
   drawPlayerHud(ctx);
+  drawReceptionHud(ctx, reception);
   // Over everything, HUD included: the arrival flash is the whole screen.
   drawUtspringFlash(ctx);
   drawDebugOverlay(ctx);
@@ -1639,6 +1941,38 @@ function drawPickups(ctx) {
   }
 }
 
+// The boss's authored projectile art (config.js
+// RESEARCH_GOLEM.projectileSprite): three patterns, five frames each.
+// Returns true when it drew, so the caller can skip the rectangle and its
+// rim -- those stay for the player's shots, the maths book's, and for any
+// frame where the sheet has not loaded.
+//
+// Presentation only. The art is drawn around the projectile's own hitbox
+// and a little larger than it, exactly as the enemies' sprites are; the
+// rectangle below is still what every collision is measured against.
+function drawBossProjectileSprite(ctx, projectile, x, y) {
+  if (!projectile.patternId) return false;
+  const spec = RESEARCH_GOLEM.projectileSprite;
+  const row = spec.rows[projectile.patternId];
+  if (!row) return false;
+  const image = getImage(spec.path);
+  if (!image) return false;
+
+  const frame = Math.floor(projectile.age / spec.frameDuration) % spec.columns;
+  // Centred on the hitbox, except the ground shot, which stands on it --
+  // see the anchor note in config.js.
+  const drawX = Math.round(x + projectile.width / 2 - row.width / 2);
+  const drawY = row.anchor === 'bottom'
+    ? Math.round(y + projectile.height - row.height)
+    : Math.round(y + projectile.height / 2 - row.height / 2);
+  ctx.drawImage(
+    image,
+    frame * spec.cellWidth, row.row * spec.cellHeight, spec.cellWidth, spec.cellHeight,
+    drawX, drawY, row.width, row.height,
+  );
+  return true;
+}
+
 function drawProjectiles(ctx) {
   for (const projectile of projectiles) {
     const x = Math.round(projectile.x);
@@ -1653,6 +1987,9 @@ function drawProjectiles(ctx) {
       ctx.fillRect(trailX, y, PROJECTILE.trailLength, projectile.height);
       ctx.globalAlpha = 1;
     }
+
+    if (drawBossProjectileSprite(ctx, projectile, x, y)) continue;
+    if (drawGraduationProjectile(ctx, projectile, x, y)) continue;
 
     ctx.fillStyle = projectile.color || PROJECTILE.color;
     ctx.fillRect(x, y, projectile.width, projectile.height);

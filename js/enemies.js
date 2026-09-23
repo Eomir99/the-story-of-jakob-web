@@ -14,6 +14,7 @@
 //            it can be hurt. Teaches "dodge, then punish".
 
 import { ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, TELEGRAPH, DAMAGE_FLASH, HAZARD, ACTIVATION } from './config.js';
+import { getImage } from './assets.js';
 
 // AGENTS.md §4: every attack's wind-up must be 0.8-1.0s -- the rule applies
 // to enemies, not only bosses. Same guard bosses.js runs over its own
@@ -280,12 +281,117 @@ const HIT_FLASH_DURATION = {
   helmet: ENEMY_HELMET.hitFlashDuration,
 };
 
+// The maths book and the football helmet draw their authored artwork
+// (art-source/enemies/*, config.js ENEMY_MATHBOOK.sprite /
+// ENEMY_HELMET.sprite). The Endless Inbox has no art yet and keeps the
+// grey-box body below, so this stays two sprites fitted to the entities
+// the fight already runs on -- not a general enemy renderer.
+const SPRITE = {
+  mathbook: ENEMY_MATHBOOK.sprite,
+  helmet: ENEMY_HELMET.sprite,
+};
+
 export function drawEnemy(ctx, enemy) {
   if (!enemy.alive) return;
 
-  // State colour first (wind-up tell, dazed recovery), then the damage
-  // flash blended over the top of it. That order matters: a hit landing
-  // mid-wind-up must not wipe out the tell the player is reading.
+  const spec = SPRITE[enemy.type];
+  const image = spec ? getImage(spritePathFor(enemy, spec)) : undefined;
+  // Only if the real asset genuinely failed to load -- a normal
+  // successful load always draws the artwork (same resilience rule as
+  // the player's and the Research Golem's sprite fallbacks).
+  if (!image) {
+    drawEnemyBox(ctx, enemy);
+    return;
+  }
+
+  // Anchored to the gameplay entity, not the other way round: centred on
+  // the footprint, read from enemy.x/y/width/height every frame, so the
+  // art cannot drift on a hit, a wind-up or a charge.
+  const x = Math.round(enemy.x + enemy.width / 2 - spec.displayWidth / 2 + spec.offsetX);
+  const y = Math.round(enemy.y + enemy.height / 2 - spec.displayHeight / 2 + spec.offsetY);
+
+  // The helmet's art faces left; flip it when it is facing right so it
+  // keeps looking at the player and its charge direction stays readable.
+  const flip = enemy.type === 'helmet' && enemy.facing === 1;
+  ctx.save();
+  if (flip) {
+    ctx.translate(x + spec.displayWidth, y);
+    ctx.scale(-1, 1);
+    ctx.drawImage(image, 0, 0, spec.displayWidth, spec.displayHeight);
+  } else {
+    ctx.drawImage(image, x, y, spec.displayWidth, spec.displayHeight);
+  }
+
+  // The same tells as before, in the same order -- state wash first, then
+  // the damage flash over the top of it, so a hit landing mid-wind-up
+  // cannot wipe out the tell the player is reading. They just wash the
+  // sprite's own pixels now instead of a rectangle.
+  const drawX = flip ? 0 : x;
+  const drawY = flip ? 0 : y;
+  const state = stateTint(enemy, spec);
+  if (state) drawSpriteTint(ctx, image, drawX, drawY, spec, state.color, state.alpha);
+  if (enemy.hitFlash > 0) {
+    const strength = Math.min(1, enemy.hitFlash / HIT_FLASH_DURATION[enemy.type]);
+    drawSpriteTint(ctx, image, drawX, drawY, spec, DAMAGE_FLASH.enemyColor, strength * spec.hitFlashTintAlpha);
+  }
+  ctx.restore();
+}
+
+// Which of the two delivered states this enemy is in. Both types swap on
+// their wind-up, which is why the sprite pair shares one canvas origin.
+function spritePathFor(enemy, spec) {
+  if (enemy.type === 'mathbook') return enemy.telegraph ? spec.telegraphPath : spec.idlePath;
+  return enemy.state === 'telegraph' ? spec.telegraphPath : spec.idlePath;
+}
+
+function stateTint(enemy, spec) {
+  if (enemy.type === 'mathbook' && enemy.telegraph) {
+    const progress = 1 - enemy.telegraph.timer / enemy.telegraph.duration;
+    return { color: ENEMY_MATHBOOK.telegraphColor, alpha: progress * spec.telegraphTintAlpha };
+  }
+  if (enemy.type === 'helmet' && enemy.state === 'telegraph') {
+    const progress = 1 - enemy.stateTimer / ENEMY_HELMET.telegraphDuration;
+    return { color: ENEMY_HELMET.telegraphColor, alpha: progress * spec.telegraphTintAlpha };
+  }
+  if (enemy.type === 'helmet' && enemy.state === 'recovering') {
+    // Dazed and vulnerable -- visibly different from every other state so
+    // "hit it now" reads at a glance, not just "it stopped moving".
+    return { color: ENEMY_HELMET.recoveryColor, alpha: spec.recoveryTintAlpha };
+  }
+  return null;
+}
+
+// Washes a flat colour over the sprite's own opaque pixels, at the same
+// place and size the sprite was just drawn, so a tell can never nudge the
+// artwork. Same technique and the same per-colour cache as bosses.js --
+// the colours are all config.js constants and this runs every frame of
+// every wind-up.
+const silhouetteCache = new Map(); // `${path}|${color}` -> offscreen canvas
+
+function drawSpriteTint(ctx, image, x, y, spec, color, alpha) {
+  if (alpha <= 0) return;
+  const key = `${image.src}|${color}`;
+  let silhouette = silhouetteCache.get(key);
+  if (!silhouette) {
+    silhouette = document.createElement('canvas');
+    silhouette.width = image.width;
+    silhouette.height = image.height;
+    const tintCtx = silhouette.getContext('2d');
+    tintCtx.drawImage(image, 0, 0);
+    tintCtx.globalCompositeOperation = 'source-in';
+    tintCtx.fillStyle = color;
+    tintCtx.fillRect(0, 0, silhouette.width, silhouette.height);
+    silhouetteCache.set(key, silhouette);
+  }
+  ctx.save();
+  ctx.globalAlpha = Math.min(1, alpha);
+  ctx.drawImage(silhouette, x, y, spec.displayWidth, spec.displayHeight);
+  ctx.restore();
+}
+
+// The grey-box body: the Endless Inbox's normal look, and the fallback
+// for the other two if their art fails to load.
+function drawEnemyBox(ctx, enemy) {
   let color = stateColor(enemy);
   if (enemy.hitFlash > 0) {
     const strength = Math.min(1, enemy.hitFlash / HIT_FLASH_DURATION[enemy.type]);
@@ -297,8 +403,7 @@ export function drawEnemy(ctx, enemy) {
   ctx.fillRect(x, y, enemy.width, enemy.height);
   // Every enemy in the game deals contact damage, so every enemy carries
   // the hazard rim (config.js HAZARD). It is what keeps the Endless Inbox
-  // from reading as scenery and the football helmet from disappearing
-  // into the USA silhouette it stands in front of.
+  // from reading as scenery.
   ctx.strokeStyle = HAZARD.outlineColor;
   ctx.lineWidth = HAZARD.bodyOutlineWidth;
   ctx.strokeRect(x, y, enemy.width, enemy.height);
