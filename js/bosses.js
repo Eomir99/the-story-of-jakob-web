@@ -778,7 +778,9 @@ function buildClaims(boss, setIndex) {
   // Shuffled so which slot (top/middle/bottom, easiest to hardest timing)
   // holds the correct claim isn't fixed -- otherwise "always jump to the
   // top one" would beat the phase without reading anything.
-  const set = shuffled(CLAIM_PHASE.sets[setIndex % CLAIM_PHASE.sets.length]);
+  const claimSet = CLAIM_PHASE.sets[setIndex % CLAIM_PHASE.sets.length];
+  boss.claimQuestion = claimSet.question ?? CLAIM_PHASE.promptText;
+  const set = shuffled(claimSet.claims);
   const x = boss.x + boss.width / 2 - CLAIM_PHASE.claimWidth / 2;
 
   // One column, stacked inside the reachable band with an inset margin so
@@ -1090,20 +1092,33 @@ export function drawResearchGolemClaims(ctx, boss) {
       }
     }
 
-    ctx.fillStyle = CLAIM_PHASE.promptColor;
-    ctx.font = CLAIM_PHASE.promptFont;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(CLAIM_PHASE.promptText, Math.round(claimsCenterX), Math.round(claimsTop - CLAIM_PHASE.promptGapAboveClaims));
+    drawClaimBanner(ctx, boss.claimQuestion ?? CLAIM_PHASE.promptText, CLAIM_PHASE.questionColor, claimsCenterX, claimsTop);
   }
 
+  // The taunt takes the question's panel while the claims are locked out.
   if (boss.tauntTimer > 0 && boss.lastClaimTaunt) {
-    ctx.fillStyle = CLAIM_PHASE.tauntColor;
-    ctx.font = CLAIM_PHASE.promptFont;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'alphabetic';
-    ctx.fillText(boss.lastClaimTaunt, Math.round(claimsCenterX), Math.round(claimsTop - CLAIM_PHASE.tauntGapAboveClaims));
+    drawClaimBanner(ctx, boss.lastClaimTaunt, CLAIM_PHASE.tauntColor, claimsCenterX, claimsTop);
   }
+}
+
+// One line of text on a dark panel directly above the claim column: the
+// question, or the taunt after a wrong shot. The panel is what makes it
+// readable over the golem's white paper body.
+function drawClaimBanner(ctx, text, color, centerX, claimsTop) {
+  ctx.font = CLAIM_PHASE.questionFont;
+  const width = Math.ceil(ctx.measureText(text).width) + CLAIM_PHASE.questionBoxPaddingX * 2;
+  const height = CLAIM_PHASE.questionBoxHeight;
+  const x = Math.round(centerX - width / 2);
+  const y = Math.round(claimsTop - CLAIM_PHASE.questionGapAboveClaims - height);
+  ctx.fillStyle = CLAIM_PHASE.boxFillColor;
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = CLAIM_PHASE.boxBorderColor;
+  ctx.lineWidth = CLAIM_PHASE.boxBorderWidth;
+  ctx.strokeRect(x, y, width, height);
+  ctx.fillStyle = color;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(text, Math.round(centerX), Math.round(y + height / 2));
 }
 
 function lerpColor(fromHex, toHex, t) {

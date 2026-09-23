@@ -234,7 +234,10 @@ function applyDebugStart() {
   spawnPoint = { x: startX, y: spawnPoint.y };
   player.x = startX;
   camera.x = startX - CANVAS.width / 2;
-  if (utspringTrigger && utspringTrigger.x < startX) utspringPhase = UTSPRING.DONE;
+  if (utspringTrigger && utspringTrigger.x < startX) {
+    utspringPhase = UTSPRING.DONE;
+    afterUtspringClock = Infinity; // long over -- no fade-in on arrival
+  }
   while (bossApproaches[nextBossApproachIndex] && bossApproaches[nextBossApproachIndex].x < startX) nextBossApproachIndex += 1;
   while (comicTriggers[nextComicTriggerIndex] && comicTriggers[nextComicTriggerIndex].x < startX) nextComicTriggerIndex += 1;
   while (checkpoints[nextCheckpointIndex] && checkpoints[nextCheckpointIndex].x < startX) nextCheckpointIndex += 1;
@@ -315,6 +318,10 @@ function enterComic(comicId, next) {
 const UTSPRING = { IDLE: 'idle', DESCENT: 'descent', FLASH: 'flash', CARD: 'card', DONE: 'done' };
 let utspringPhase = UTSPRING.IDLE;
 let utspringTimer = 0;
+// s since the utspring ended (DONE). Drives landmarks placed with
+// showAfterUtspring (level.js), which stay hidden through the celebration
+// and fade in once control returns.
+let afterUtspringClock = 0;
 let confetti = [];
 
 function isUtspringRunning() {
@@ -324,7 +331,10 @@ function isUtspringRunning() {
 // Called first in every step, so the auto-run speed is already set by the
 // time updatePlayer reads it.
 function updateUtspring(dt) {
-  if (utspringPhase === UTSPRING.DONE) return;
+  if (utspringPhase === UTSPRING.DONE) {
+    afterUtspringClock += dt;
+    return;
+  }
 
   if (utspringPhase === UTSPRING.IDLE) {
     // Fires exactly once per playthrough: the phase leaves IDLE here and
@@ -794,7 +804,7 @@ function loadLevel() {
     } else if (entry.type === 'background-section') {
       sections.push({ name: entry.name, xStart: entry.xStart, xEnd: entry.xEnd, background: entry.background });
     } else if (entry.type === 'landmark') {
-      landmarks.push({ landmark: entry.landmark, x: entry.x, parallax: entry.parallax });
+      landmarks.push({ landmark: entry.landmark, x: entry.x, parallax: entry.parallax, showAfterUtspring: entry.showAfterUtspring ?? false });
     } else if (entry.type === 'utspring-trigger') {
       utspringTrigger = { x: entry.x, markY: y };
     } else if (entry.type === 'comic-trigger') {
@@ -1418,7 +1428,10 @@ function drawGround(ctx) {
     tileX < right;
     tileX += texture.tileWidth
   ) {
-    ctx.drawImage(image, tileX, WORLD.groundY, texture.tileWidth, texture.tileHeight);
+    // raise (optional, config.js): px of the tile drawn ABOVE groundY, for
+    // a floor whose art has things standing up out of the surface the
+    // player walks on (the Graduation balustrade's capstones).
+    ctx.drawImage(image, tileX, WORLD.groundY - (texture.raise ?? 0), texture.tileWidth, texture.tileHeight);
   }
 }
 
@@ -1765,6 +1778,12 @@ function drawLandmarks(ctx) {
 
     const spec = LANDMARK.types[placement.landmark];
     if (!spec) continue;
+    // Hidden through the utspring celebration, then faded in.
+    let fade = 1;
+    if (placement.showAfterUtspring) {
+      if (utspringPhase !== UTSPRING.DONE) continue;
+      fade = Math.min(1, afterUtspringClock / LANDMARK.afterUtspringFadeIn);
+    }
 
     const homeCameraX = placement.x - CANVAS.width / 2;
     const drawX = placement.x + (camera.x - homeCameraX) * (1 - placement.parallax);
@@ -1775,7 +1794,7 @@ function drawLandmarks(ctx) {
     const footOffset = image && spec.baselineY !== undefined
       ? spec.baselineY * spec.height / image.height : spec.height;
     const top = groundY - footOffset;
-    ctx.globalAlpha = spec.alpha ?? LANDMARK.alpha;
+    ctx.globalAlpha = (spec.alpha ?? LANDMARK.alpha) * fade;
     if (image) {
       ctx.drawImage(image, drawX, top, spec.width, spec.height);
     } else {
@@ -1965,11 +1984,21 @@ function drawBossProjectileSprite(ctx, projectile, x, y) {
   const drawY = row.anchor === 'bottom'
     ? Math.round(y + projectile.height - row.height)
     : Math.round(y + projectile.height / 2 - row.height / 2);
+  // Art drawn pointing one way (row.facing) is mirrored for a shot
+  // travelling the other way, around the art's own centre.
+  const mirror = (row.facing === 'right' && projectile.vx < 0) || (row.facing === 'left' && projectile.vx > 0);
+  ctx.save();
+  if (mirror) {
+    ctx.translate(drawX + row.width / 2, 0);
+    ctx.scale(-1, 1);
+    ctx.translate(-(drawX + row.width / 2), 0);
+  }
   ctx.drawImage(
     image,
     frame * spec.cellWidth, row.row * spec.cellHeight, spec.cellWidth, spec.cellHeight,
     drawX, drawY, row.width, row.height,
   );
+  ctx.restore();
   return true;
 }
 

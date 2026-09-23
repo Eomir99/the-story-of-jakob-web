@@ -61,7 +61,7 @@ export const WORLD = {
     tileHeight: 415,
   },
   // The Graduation arena's floor: the floating stone ledge the arena art
-  // stands on (art-source/backgrounds/ground-boss-2.png). Same rules again,
+  // stands on (art-source/backgrounds/ground-boss-2-v2.png). Same rules again,
   // swapped in only while graduationInterior() (game.js drawGround), with
   // two differences: its tiling starts at the arena art's own left edge
   // instead of world x 0, and the tile is wider than the arena frame, so
@@ -71,8 +71,20 @@ export const WORLD = {
   // gu-ceremony gradient's bottom colour), not the dark earth slab.
   graduationGroundTexture: {
     path: 'assets/backgrounds/graduation-ground.webp',
-    tileWidth: 2023,
-    tileHeight: 420,
+    tileWidth: 1980,
+    tileHeight: 387,
+    // px of the tile drawn above groundY. The tile starts at the tops of
+    // the capstones, but the flat ledge the player walks on is 6px lower;
+    // drawn level with groundY, the ledge between the capstones read as a
+    // step down below everyone's feet. Raised by 6, the ledge IS the
+    // floor line and only the capstones stand above it.
+    raise: 6,
+    // px below groundY the arena camera shows (level.js
+    // GRADUATION_ARENA_FRAME). The balustrade's stone is solid to ~252px
+    // below the tile's top edge -- ~246px below groundY once raised --
+    // and below that is its ragged bottom edge and empty sky, which must
+    // stay out of shot. Larger zooms the camera out, smaller zooms it in.
+    visibleDepth: 244,
     fillColor: '#c9d3f0',
   },
 };
@@ -282,6 +294,9 @@ export const LANDMARK = {
   labelFont: '13px sans-serif',
   labelColor: '#f7f3e3',
   labelGap: 8, // px between the label's baseline and the box top
+  // s a showAfterUtspring landmark (level.js) takes to fade in once the
+  // studentmössa celebration is over.
+  afterUtspringFadeIn: 0.8,
   types: {
     // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
     // background". Never abbreviated on first appearance.
@@ -289,6 +304,21 @@ export const LANDMARK = {
     // AGENTS.md §3: "the Polhem mech sleeping on the skyline".
     'polhem-mech': { path: 'assets/backgrounds/polhem-mech.webp', colorMode: 'full-color', width: 420, height: 420, baselineY: 831, alpha: 1 },
     stadium: { label: 'STADIUM', width: 900, height: 260, color: '#2f4a63' },
+
+    // World props: road signs and the airport departures board (author
+    // art). Signs stand on the ground: baselineY is the delivered image's
+    // bottom row. Delivered at 2x these boxes (scripts/runtime-assets.py).
+    'sign-lund-arrow': { path: 'assets/backgrounds/sign-lund-arrow.webp', colorMode: 'full-color', width: 153, height: 200, baselineY: 400, alpha: 1 },
+    'sign-welcome-lund': { path: 'assets/backgrounds/sign-welcome-lund.webp', colorMode: 'full-color', width: 126, height: 240, baselineY: 480, alpha: 1 },
+    'sign-gothenburg-arrow': { path: 'assets/backgrounds/sign-gothenburg-arrow.webp', colorMode: 'full-color', width: 172, height: 200, baselineY: 400, alpha: 1 },
+    // The departures board HANGS from above the screen instead: baselineY
+    // is far below the image (in delivered pixels, 2 per world px), which
+    // puts its top 502 world px above the floor line (world y 118). The
+    // camera normally rests with the top of the screen near world y 158
+    // (CAMERA.deadzoneHeight around a standing player), so the rods run up
+    // out of shot -- even at the top of a jump -- and the board hangs
+    // above the player's head.
+    'departures-board': { path: 'assets/backgrounds/departures-board.webp', colorMode: 'full-color', width: 520, height: 325, baselineY: 1004, alpha: 1 },
 
     // Boss-specific world-space environment scenery (AGENTS.md §6,
     // BACKGROUND-ASSET-SPEC.md's scope exception): one-off placed images,
@@ -368,12 +398,15 @@ export const LANDMARK = {
     // fits under the top of the frame with the camera at its resting height.
     'graduation-portal': { path: 'assets/backgrounds/graduation-portal.webp', colorMode: 'full-color', width: 440, height: 402, baselineY: 374, alpha: 1 },
     // The Graduation arena (boss-2-arena-v1.png), native size. It paints
-    // its own floor ledge from row ~726 down; baselineY sits at that row,
-    // so the art's ledge is hidden behind the separate graduation ground
-    // (WORLD.graduationGroundTexture), which drawGround paints afterwards
-    // on WORLD.groundY -- the same trick as the Research Golem arena.
+    // its own floor ledge from row ~727 down, hidden behind the separate
+    // graduation ground (WORLD.graduationGroundTexture), which drawGround
+    // paints afterwards on WORLD.groundY -- the same trick as the Research
+    // Golem arena. baselineY sits 12px ABOVE that ledge, so the art is drawn
+    // 12px lower and the ground overlaps it a little: at 726 the ledge's
+    // dark edge and bright top face showed as a line through the gaps
+    // between the balustrade's capstones.
     // Portal opening at local x 318 (level.js GRADUATION_ARENA_PORTAL_LOCAL_X).
-    'graduation-arena': { path: 'assets/backgrounds/graduation-arena.webp', colorMode: 'full-color', width: 1831, height: 859, baselineY: 726, alpha: 1 },
+    'graduation-arena': { path: 'assets/backgrounds/graduation-arena.webp', colorMode: 'full-color', width: 1831, height: 859, baselineY: 714, alpha: 1 },
   },
 };
 
@@ -1227,7 +1260,10 @@ export const RESEARCH_GOLEM = {
     rows: {
       'ground-shot': { row: 0, width: 60, height: 52, anchor: 'bottom' },
       'high-arc': { row: 1, width: 52, height: 50, anchor: 'centre' },
-      'spread-burst': { row: 2, width: 52, height: 34, anchor: 'centre' },
+      // The dart is drawn pointing right; `facing` says so, and the
+      // renderer mirrors it for a shot travelling left (game.js
+      // drawBossProjectileSprite), which is every shot the golem fires.
+      'spread-burst': { row: 2, width: 52, height: 34, anchor: 'centre', facing: 'right' },
     },
   },
 
@@ -1293,12 +1329,18 @@ export const CLAIM_PHASE = {
   boxBorderWidth: 2, // px
   textColor: '#f7f3e3',
   textFont: '20px sans-serif',
-  promptFont: '18px sans-serif',
-  promptColor: '#f7f3e3',
   tauntColor: '#f0806f',
 
+  // Fallback question, for a set without its own `question` (sets below).
   promptText: 'Which claim is supported?',
-  promptGapAboveClaims: 26, // px between the claim column and the prompt text
+  // The question sits on its own dark panel directly above the claim
+  // column. It used to be bare cream text there, which landed on the
+  // golem's white paper body and could not be read at all.
+  questionFont: 'bold 20px sans-serif',
+  questionColor: '#ffd65a',
+  questionBoxPaddingX: 14, // px either side of the text
+  questionBoxHeight: 36, // px
+  questionGapAboveClaims: 10, // px between the panel and the top claim
   evidenceMarkerColor: '#6fd67a',
   evidenceMarkerSize: 16,
   // px left of the claim box the evidence marker floats. To the side and
@@ -1315,21 +1357,29 @@ export const CLAIM_PHASE = {
   // actually shown during the lockout, which is why the same duration
   // drives both -- there is one window, not two to keep in sync.
   tauntDuration: 2.0,
-  tauntGapAboveClaims: 58, // px, above the prompt so they don't overlap
 
   // Claim content, a few words each, never sentences (they're read on
-  // canvas above a moving boss). One set per claim phase (max two).
+  // canvas above a moving boss). One set per claim phase (max two). Each
+  // set asks its own `question`, read out above the claims; the answers
+  // are the evidence offered for it, and only one of them holds up.
+  // Author-owned copy -- placeholder wording.
   sets: [
-    [
-      { text: '40% YoY growth', correct: true },
-      { text: 'n = 12 survey', correct: false },
-      { text: 'No control group', correct: false },
-    ],
-    [
-      { text: 'Consistent across quarters', correct: true },
-      { text: 'Cherry-picked date range', correct: false },
-      { text: 'Anonymous single source', correct: false },
-    ],
+    {
+      question: 'Did the new DLC grow revenue?',
+      claims: [
+        { text: '40% YoY growth', correct: true },
+        { text: 'n = 12 survey', correct: false },
+        { text: 'No control group', correct: false },
+      ],
+    },
+    {
+      question: 'Are players spending more?',
+      claims: [
+        { text: 'Consistent across quarters', correct: true },
+        { text: 'Cherry-picked date range', correct: false },
+        { text: 'Anonymous single source', correct: false },
+      ],
+    },
   ],
 };
 

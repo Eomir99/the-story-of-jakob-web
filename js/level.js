@@ -47,32 +47,39 @@ const platformTop = (clearance) => WORLD.groundY - clearance;
 // stands), not from a travel-time target. Both stay flat (task C) -- no
 // platform is ever placed inside either.
 
-// --- Lund (12,600px: SPAWN_X to the end of the utspring) ------------------
-// The maths book (the enemy-behaviours brief): one behaviour, placed three
-// times so it plays differently each time despite identical logic --
+// --- Lund (10,000px: SPAWN_X to the end of the utspring) ------------------
+// Shortened from 12,600px (author feedback: Lund ran too long), with two
+// ground books added to fill the space. The maths book (the
+// enemy-behaviours brief): one behaviour, placed five times so it plays
+// differently each time despite identical logic --
 //   1  MATHBOOK_1_X             alone, flat ground, nothing else on screen.
 //                               The game's shooting tutorial; this
 //                               encounter cannot be lost.
+//   -  MATHBOOK_GROUND_A_X      on the ground after the first two jumps.
 //   2  MATHBOOK_2_PLATFORM_X    on a ledge -- jump-timed shot, or walk under.
 //   3  MATHBOOK_3_PLATFORM_X    past a real gap between two platforms --
 //                               jump it while its shot may be in the air,
 //                               or skip it at ground level like the ledge.
+//   -  MATHBOOK_GROUND_B_X      on the ground before the last jump and the
+//                               climb to the staircase.
 const MATHBOOK_1_X = SPAWN_X + 780; // 900 -- alone; nothing else until PLATFORM_A_X
-const PLATFORM_A_X = MATHBOOK_1_X + 1400; // 2300 -- quiet stretch, then a jump
-const PLATFORM_B_X = PLATFORM_A_X + 900; // 3200 -- clustered with A
-const MATHBOOK_2_PLATFORM_X = PLATFORM_B_X + 1600; // 4800 -- carries the ledge book
-const GAP_APPROACH_PLATFORM_X = MATHBOOK_2_PLATFORM_X + 1600; // 6400 -- launch side of the gap
+const PLATFORM_A_X = MATHBOOK_1_X + 1100; // 2000 -- quiet stretch, then a jump
+const PLATFORM_B_X = PLATFORM_A_X + 800; // 2800 -- clustered with A
+const MATHBOOK_GROUND_A_X = PLATFORM_B_X + 700; // 3500
+const MATHBOOK_2_PLATFORM_X = PLATFORM_B_X + 1300; // 4100 -- carries the ledge book
+const GAP_APPROACH_PLATFORM_X = MATHBOOK_2_PLATFORM_X + 1300; // 5400 -- launch side of the gap
 const MATHBOOK_3_GAP_WIDTH = 200; // px -- comfortably under the ~268px max jump range
-const MATHBOOK_3_PLATFORM_X = GAP_APPROACH_PLATFORM_X + PLATFORM.width + MATHBOOK_3_GAP_WIDTH; // 6820 -- carries the far-side book
+const MATHBOOK_3_PLATFORM_X = GAP_APPROACH_PLATFORM_X + PLATFORM.width + MATHBOOK_3_GAP_WIDTH; // 5820 -- carries the far-side book
+const MATHBOOK_GROUND_B_X = MATHBOOK_3_PLATFORM_X + 950; // 6770
 
 // Checkpoints (AGENTS.md §6: invisible checkpoints; polish-pass audit
 // finding A2). Before this, Lund carried none at all -- the only
 // checkpoint anywhere in the section was UTSPRING_END_X, so dying at the
 // gap jump (6,820) replayed the entire section from SPAWN_X (120), about
 // 18.6s of running back through content that had already been cleared.
-// Three checkpoints keep every death in Lund under ~15s of replay:
+// Three checkpoints keep every death in Lund short:
 const CHECKPOINT_AFTER_MATHBOOK_1_X = MATHBOOK_1_X + 200; // 1100 -- past the tutorial book
-const CHECKPOINT_BEFORE_GAP_X = GAP_APPROACH_PLATFORM_X - 300; // 6100 -- short of the gap jump
+const CHECKPOINT_BEFORE_GAP_X = GAP_APPROACH_PLATFORM_X - 300; // 5100 -- short of the gap jump
 // STAIRCASE_START_X is defined below (it's derived from the descent
 // timing); this checkpoint sits one pixel short of it. Reaching it means
 // the ascent climb is already done, so respawning here drops the player
@@ -110,8 +117,8 @@ const STAIR_TOP_Y = WORLD.groundY - STAIR_TOP_CLEARANCE;
 
 // Where the sequence ends is Lund's derived length; everything else in the
 // staircase is measured backwards from there, so the section still runs
-// its full 12,600px.
-const UTSPRING_END_X = SPAWN_X + 12600; // 12720
+// its full 10,000px.
+const UTSPRING_END_X = SPAWN_X + 10000; // 10120
 
 // Background-transition repair: the Lund-utspring -> Göteborg-city section
 // boundary used to sit at UTSPRING_END_X itself. BACKGROUND.blendBandWidth
@@ -125,12 +132,12 @@ const UTSPRING_END_X = SPAWN_X + 12600; // 12720
 // after control returns -- the celebration and the run that ends it stay
 // visually Lund/Polhem throughout, and Göteborg only starts revealing itself
 // once the player is moving through it again.
-const LUND_GOTEBORG_BACKGROUND_X = UTSPRING_END_X + 600; // 13320
-const STAIRCASE_START_X = UTSPRING_END_X - UTSPRING_RUN_LENGTH; // 11370 -- the handover line
-const CHECKPOINT_AT_STAIRCASE_TOP_X = STAIRCASE_START_X - 1; // 11369 -- see the note above
-const STAIRCASE_ASCENT_X = STAIRCASE_START_X - STAIR_ASCENT_STEPS * PLATFORM.width; // 10930
+const LUND_GOTEBORG_BACKGROUND_X = UTSPRING_END_X + 600; // 10720
+const STAIRCASE_START_X = UTSPRING_END_X - UTSPRING_RUN_LENGTH; // 8770 -- the handover line
+const CHECKPOINT_AT_STAIRCASE_TOP_X = STAIRCASE_START_X - 1; // 8769 -- see the note above
+const STAIRCASE_ASCENT_X = STAIRCASE_START_X - STAIR_ASCENT_STEPS * PLATFORM.width; // 8330
 
-const PLATFORM_C_X = STAIRCASE_ASCENT_X - 1500; // 9430 -- last ordinary jump before the climb
+const PLATFORM_C_X = STAIRCASE_ASCENT_X - 1100; // 7230 -- last ordinary jump before the climb
 
 // The descending run itself: one platform per step, each PLATFORM.width
 // along and STAIRCASE.stepDrop further down. The final step sits one drop
@@ -153,7 +160,10 @@ const stairAscent = () =>
     walkway: true,
   }));
 
-// --- Göteborg (9,200px: the end of the utspring to the Golem's line) -----
+// --- Göteborg (6,900px: the end of the utspring to the Golem's line) -----
+// Shortened again from 9,200px (author feedback: still too long), and four
+// maths books added so the stretch isn't empty running: one on each high
+// platform (E, G) and a pair on the ground between the two clusters.
 // Level-compression pass: this section was 18,400px, almost exactly half of
 // which was one uninterrupted "quiet stretch" between platforms E and F
 // (9,500px of empty running -- more than the whole Lund section). Halving
@@ -163,12 +173,14 @@ const stairAscent = () =>
 // the approach comic and activation line) is still here, just closer
 // together. All four platforms keep their original relative clustering
 // (D+E close together, F+G close together) -- only the long gap shrank.
-const PLATFORM_D_X = UTSPRING_END_X + 1200; // 13920
-const PLATFORM_E_X = PLATFORM_D_X + 900; // 14820 -- clustered with D
-const PLATFORM_F_X = PLATFORM_E_X + 4200; // 19020 -- quiet stretch, was 9,500
-const PLATFORM_G_X = PLATFORM_F_X + 900; // 19920 -- clustered with F
-const GOLEM_COMIC_X = PLATFORM_G_X + 2000; // 21920 -- comic-trigger spacing only; the background boundary sits at GOLEM_ACTIVATION_X (see SECTION_HANDELS_X)
-const GOLEM_ACTIVATION_X = GOLEM_COMIC_X + 500; // 22420 = UTSPRING_END_X + 9,700 (9,200 section + 500 comic-to-activation) ✓
+const PLATFORM_D_X = UTSPRING_END_X + 1000; // 11120
+const PLATFORM_E_X = PLATFORM_D_X + 900; // 12020 -- clustered with D, carries a book
+const GOTEBORG_MATHBOOK_A_X = PLATFORM_E_X + 1100; // 13120 -- ground
+const GOTEBORG_MATHBOOK_B_X = GOTEBORG_MATHBOOK_A_X + 800; // 13920 -- ground, paired with A
+const PLATFORM_F_X = PLATFORM_E_X + 2600; // 14620 -- after the ground pair (was 4,200 of empty running)
+const PLATFORM_G_X = PLATFORM_F_X + 900; // 15520 -- clustered with F, carries a book
+const GOLEM_COMIC_X = PLATFORM_G_X + 1500; // 17020 -- comic-trigger spacing only; the background boundary sits at GOLEM_ACTIVATION_X (see SECTION_HANDELS_X)
+const GOLEM_ACTIVATION_X = GOLEM_COMIC_X + 500; // 17520 = UTSPRING_END_X + 7,400 (6,900 section + 500 comic-to-activation)
 // Also the Research Golem venue's own entry line (RESEARCH_GOLEM_ENTRY_X
 // below): the line the scripted approach walk ends exactly on, where the
 // comic opens, and where the player is standing -- already just inside the
@@ -334,27 +346,35 @@ const GRADUATION_REVEAL_CAMERA_X = PORTAL_X + PORTAL_WIDTH + GRADUATION_ENTRANCE
 // opening -- the player steps in through one and out of the other. Like
 // the Research Golem venue, exterior and interior share world x but are
 // never drawn at the same time. Local x positions measured on the
-// 1831px-wide art: portal opening 318; the boss stands at 1250, so a shot
-// fired from the portal reaches him (PROJECTILE.speed * lifetime = 990px;
-// this leaves ~910px, about the Research Golem's own entrance-to-boss
-// distance). The armour and the final comic sit between him and the art's
-// right edge -- the arena camera frames the whole image, so all of it stays
-// in shot.
+// 1831px-wide art: portal opening 318; the boss stands at 1340 -- as far
+// right as a shot fired from the portal mouth still reaches (the shot
+// leaves at local 342 and its front travels PROJECTILE.width + speed *
+// lifetime = 1004px, to 1346). The armour and the final comic sit between
+// him and the art's right edge, inside the camera frame below.
 const GRADUATION_ARENA_PORTAL_LOCAL_X = 318;
-const GRADUATION_ARENA_BOSS_LOCAL_X = 1250;
+const GRADUATION_ARENA_BOSS_LOCAL_X = 1340;
 const GRADUATION_ARENA_WIDTH = LANDMARK.types['graduation-arena'].width; // 1831
-const GRADUATION_ARENA_IMAGE_X = PORTAL_OPENING_X - GRADUATION_ARENA_PORTAL_LOCAL_X; // 36613
-// The world rectangle the zoomed-out arena camera frames (game.js
-// graduationArenaFraming): the art's full width, from the art's top edge.
+const GRADUATION_ARENA_IMAGE_X = PORTAL_OPENING_X - GRADUATION_ARENA_PORTAL_LOCAL_X;
+// The world rectangle the arena camera frames (game.js
+// graduationArenaFraming, which zooms so left..right fills the screen):
+// from the art's top edge down to visibleDepth below the floor line
+// (config.js WORLD.graduationGroundTexture) -- never as far as the empty
+// sky under the floating floor. That height fixes the frame's width at the
+// screen's aspect ratio; the frame keeps the art's right edge and gives up
+// the rest on the left, the decorative side behind the portal, so the
+// floor between the portal and the boss stays fully in shot.
+const GRADUATION_ARENA_FRAME_TOP = WORLD.groundY - LANDMARK.types['graduation-arena'].baselineY;
+const GRADUATION_ARENA_FRAME_HEIGHT = WORLD.groundY + WORLD.graduationGroundTexture.visibleDepth - GRADUATION_ARENA_FRAME_TOP;
+const GRADUATION_ARENA_FRAME_WIDTH = Math.min(GRADUATION_ARENA_WIDTH, GRADUATION_ARENA_FRAME_HEIGHT * CANVAS.width / CANVAS.height); // ~1710
 const GRADUATION_ARENA_FRAME = {
-  left: GRADUATION_ARENA_IMAGE_X,
+  left: GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_WIDTH - GRADUATION_ARENA_FRAME_WIDTH,
   right: GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_WIDTH,
-  top: WORLD.groundY - LANDMARK.types['graduation-arena'].baselineY,
+  top: GRADUATION_ARENA_FRAME_TOP,
 };
 
-const GRADUATION_X = GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_BOSS_LOCAL_X; // 37863
-const ARMOUR_X = GRADUATION_X + GRADUATION.width + 80; // 38083
-const FINAL_COMIC_X = ARMOUR_X + 100; // 38183 -- local 1570, well inside the frame
+const GRADUATION_X = GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_BOSS_LOCAL_X;
+const ARMOUR_X = GRADUATION_X + GRADUATION.width + 80; // local 1580
+const FINAL_COMIC_X = ARMOUR_X + 100; // local 1680, inside the frame
 
 // --- Background sections ----------------------------------------------------
 // Ten sections, in level order (level-compression pass: was eight, split by
@@ -376,26 +396,26 @@ const FINAL_COMIC_X = ARMOUR_X + 100; // 38183 -- local 1570, well inside the fr
 // they bound (Haga/Clinic/USA above).
 //
 //   #  section                        start    length   at 360 px/s
-//   1  Lund -- town                       0    4,200       11.7 s
-//   2  Polhem -- the school           4,200    5,730       15.9 s
-//   3  Lund -- the utspring           9,930    3,390        9.4 s
-//   4  Göteborg -- the city          13,320    9,100       25.3 s
-//   5  Handels -- Golem arena        22,420    1,815        5.0 s
-//   6  Haga -- Göteborg exterior     24,235    2,048        5.7 s
-//   7  Clinic -- reception           26,283    2,400        6.7 s (+ the encounter itself)
-//   8  USA -- the stadium            28,331    7,100       19.7 s
-//   9  Haga -- portal lead-in        35,431    1,476        4.1 s (scripted from 36,187)
-//  10  GU -- Graduation arena        36,907    1,776        4.9 s
+//   1  Lund -- town                       0    3,700       10.3 s
+//   2  Polhem -- the school           3,700    3,630       10.1 s
+//   3  Lund -- the utspring           7,330    3,390        9.4 s
+//   4  Göteborg -- the city          10,720    6,800       18.9 s
+//   5  Handels -- Golem arena        17,520    1,815        5.0 s
+//   6  Haga -- Göteborg exterior     19,335    2,048        5.7 s
+//   7  Clinic -- reception           21,383    2,400        6.7 s (+ the encounter itself)
+//   8  USA -- the stadium            23,783    7,100       19.7 s
+//   9  Haga -- portal lead-in        30,883    1,476        4.1 s (scripted from 31,639)
+//  10  GU -- Graduation arena        32,359    1,796        5.0 s
 //                                            -------      -------
-//                                            38,683      107.5 s
+//                                            34,155       94.9 s
 //
 // (Boss-fight duration is not distance-based and isn't part of the "at
 // 360 px/s" column above; the Handels and GU rows are their arenas' own
 // activation-to-exit width, not a fight-time estimate either. Row 5's
 // length is set by RESEARCH_GOLEM_EXIT_X, the venue's own explicit exit
 // line -- see the render-state repair note above GOLEM_ACTIVATION_X.)
-const SECTION_POLHEM_X = 4200;
-const SECTION_LUND_RETURN_X = STAIRCASE_ASCENT_X - 1000; // 9930
+const SECTION_POLHEM_X = 3700; // moved in with Lund's shortening (was 4,200)
+const SECTION_LUND_RETURN_X = STAIRCASE_ASCENT_X - 1000; // 7330
 // Göteborg's backdrop starts at LUND_GOTEBORG_BACKGROUND_X (13320), a buffer
 // past UTSPRING_END_X (12720) -- see that constant's own note above for why
 // this is deliberately not the same line the studentmössa run/celebration
@@ -426,8 +446,21 @@ const LEVEL_END_X = FINAL_COMIC_X + 500; // 37471
 // far away a thing reads is a layout decision, and the same object could
 // sit on the horizon in one place and close by in another.
 const UF_STAND_X = 1800;
-const POLHEM_MECH_X = 6200;
+const POLHEM_MECH_X = 5300; // inside the shortened Polhem section (was 6,200)
 const STADIUM_X = USA_HELMET_X + 600; // same close spacing to the helmet as before
+// World props (author request). Placement x is the art's left edge.
+const SIGN_LUND_ARROW_X = SPAWN_X + 330; // early in the first Lund backdrop
+// Centred on the switch from the distant Lund skyline to the Lund streets.
+const SIGN_WELCOME_LUND_X = SECTION_POLHEM_X - LANDMARK.types['sign-welcome-lund'].width / 2;
+// Just after the utspring ends, before the Göteborg backdrop starts to
+// fade in (BACKGROUND.blendBandWidth / 2 = 200px before its boundary).
+// The zoomed-out celebration camera can see this spot, so the sign is
+// hidden until the celebration is over and then fades in
+// (showAfterUtspring below, config.js LANDMARK.afterUtspringFadeIn).
+const SIGN_GOTHENBURG_X = UTSPRING_END_X + 250;
+// Hanging over the way out of the Clinic, straddling the change to USA and
+// clear of the reception arena's right edge.
+const DEPARTURES_BOARD_X = SECTION_USA_X - 480;
 
 // How far the ground is filled either side of the level proper. This is
 // layout, not rendering trivia: it is "where the level's floor starts and
@@ -462,6 +495,10 @@ export const LEVEL = [
   { type: 'landmark', landmark: 'uf-stand', x: UF_STAND_X, parallax: 1 },
   { type: 'landmark', landmark: 'polhem-mech', x: POLHEM_MECH_X, parallax: 1 },
   { type: 'landmark', landmark: 'stadium', x: STADIUM_X, parallax: 0.35 },
+  { type: 'landmark', landmark: 'sign-lund-arrow', x: SIGN_LUND_ARROW_X, parallax: 1 },
+  { type: 'landmark', landmark: 'sign-welcome-lund', x: SIGN_WELCOME_LUND_X, parallax: 1 },
+  { type: 'landmark', landmark: 'sign-gothenburg-arrow', x: SIGN_GOTHENBURG_X, parallax: 1, showAfterUtspring: true },
+  { type: 'landmark', landmark: 'departures-board', x: DEPARTURES_BOARD_X, parallax: 1 },
 
   // Research Golem venue art (AGENTS.md §6's boss-specific world-space
   // scenery). Door-role repair task: the façade is placed twice, once
@@ -513,6 +550,9 @@ export const LEVEL = [
   { type: 'platform', x: PLATFORM_A_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_B_X, y: platformTop(CLEARANCE_HIGH) },
 
+  // Filler book on the ground (Lund shortening pass).
+  { type: 'enemy-mathbook', x: MATHBOOK_GROUND_A_X },
+
   //   2  ledge. Contact-safe from the ground -- only killable with a
   //      jump-timed shot or by climbing up (same height logic verified for
   //      the claim phase, task 2.5). Optional: skip it, or take the skill
@@ -539,6 +579,9 @@ export const LEVEL = [
     x: MATHBOOK_3_PLATFORM_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
     y: platformTop(CLEARANCE_LOW) - ENEMY_MATHBOOK.height,
   },
+
+  // Filler book on the ground before the last jump (Lund shortening pass).
+  { type: 'enemy-mathbook', x: MATHBOOK_GROUND_B_X },
 
   { type: 'platform', x: PLATFORM_C_X, y: platformTop(CLEARANCE_LOW) },
 
@@ -583,6 +626,15 @@ export const LEVEL = [
 
   { type: 'platform', x: PLATFORM_D_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_E_X, y: platformTop(CLEARANCE_HIGH) },
+  // Göteborg's maths books (shortening pass): one on each high platform,
+  // a pair on the ground between the two clusters.
+  {
+    type: 'enemy-mathbook',
+    x: PLATFORM_E_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
+    y: platformTop(CLEARANCE_HIGH) - ENEMY_MATHBOOK.height,
+  },
+  { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_A_X },
+  { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_B_X },
 
   // The Endless Inbox and the football helmet used to stand here. Task
   // 6.8's section order puts the admin enemy in the Clinic and the
@@ -591,6 +643,11 @@ export const LEVEL = [
 
   { type: 'platform', x: PLATFORM_F_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_G_X, y: platformTop(CLEARANCE_HIGH) },
+  {
+    type: 'enemy-mathbook',
+    x: PLATFORM_G_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
+    y: platformTop(CLEARANCE_HIGH) - ENEMY_MATHBOOK.height,
+  },
 
   // Story beat 5 (AGENTS.md §3): the camera-reveal repair task's scripted
   // sequence (game.js updateBossApproach) -- stop, camera reveal, Jakob's
@@ -775,7 +832,13 @@ export function entryY(entry) {
 // (e.g. ?start=clinic&round=3) starts the Clinic reception at that round.
 // game.js applyDebugStart. Without the query parameter nothing here is used.
 export const DEBUG_START_X = {
+  // Just short of the Lund streets (the Welcome to Lund sign).
+  lund: SECTION_POLHEM_X - 500,
+  // Just after the utspring, in front of the Gothenburg sign.
+  goteborg: UTSPRING_END_X + 20,
   clinic: SECTION_CLINIC_X - 150,
+  // Past the Clinic encounter, approaching the departures board and USA.
+  usa: SECTION_USA_X - 800,
   // The end of USA, just before the Haga portal lead-in.
   graduation: SECTION_PORTAL_HAGA_X - 400,
 };
