@@ -914,6 +914,13 @@ export const USA_THOUGHTS = {
   football: { text: 'American football: a fun spectacle… but they really gotta learn to pick up the pace.', duration: 3.8 },
 };
 
+// Jakob's thought on the walk up to the utspring staircase (level.js
+// 'thought-trigger'), timed to fade as the staircase takes over.
+export const STAIRCASE_THOUGHT = {
+  text: 'Time flies, let’s become a real adult!!',
+  duration: 3.0, // s on screen
+};
+
 export const GOTHENBURG_THOUGHT = {
   text: 'Armed with the basics, let’s continue on the business path!',
   duration: 3.2, // s on screen

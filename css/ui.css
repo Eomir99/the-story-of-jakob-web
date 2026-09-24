@@ -121,34 +121,6 @@
   color: #e6e9f0;
 }
 
-.skip-link {
-  color: #dfe3ec;
-  font-size: 0.85rem;
-  text-decoration: underline;
-}
-
-.skip-link:hover,
-.skip-link:focus-visible {
-  color: #ffffff;
-}
-
-/* A non-gamer must never have to guess the controls (PLAN.md 4.1). */
-.controls-list {
-  display: flex;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: 0.2rem 1.25rem;
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  font-size: 0.85rem;
-  color: #dfe3ec;
-}
-
-.controls-list li strong {
-  color: #ffffff;
-}
-
 /* Comic viewer (task 4.3; task 2, playtest round 2: panels stack instead
    of replacing each other). #comic-screen itself does not scroll -- it
    stays a plain full-cover box so .comic-hint, a direct child of it, can
@@ -341,12 +313,17 @@
    styling from the title screen's own, much bigger Skip link. Last child
    of #viewport (index.html), so it paints above the canvas and the comic
    screen with no z-index needed. */
+/* A bottom bar the width of the play area: Skip to application at the
+   far left, volume and mute at the far right. The bar itself lets clicks
+   through (left click fires), only the controls catch them. */
 .persistent-controls {
   position: absolute;
+  left: 0.6rem;
   right: 0.6rem;
   bottom: 0.6rem;
   display: flex;
   gap: 0.6rem;
+  pointer-events: none;
   font-family: system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
 }
 
@@ -355,6 +332,7 @@
 }
 
 .persistent-control {
+  pointer-events: auto;
   font: inherit;
   font-size: 0.75rem;
   color: rgba(247, 243, 227, 0.55);
@@ -370,6 +348,10 @@
 .persistent-control:focus-visible {
   color: #f7f3e3;
   background: rgba(13, 17, 23, 0.75);
+}
+
+.skip-control {
+  margin-right: auto; /* pushes volume and mute to the far right */
 }
 
 /* The volume slider: a pill like its neighbours, with the slider inside. */

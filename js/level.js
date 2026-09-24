@@ -30,7 +30,7 @@
 // together, then a quiet stretch, then one on a platform) rather than
 // landing on a steady rhythm, which would read as filler.
 
-import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, UF_THOUGHT, USA_THOUGHTS, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
+import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, UF_THOUGHT, USA_THOUGHTS, STAIRCASE_THOUGHT, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
 
 const SPAWN_X = 120;
 
@@ -135,6 +135,11 @@ const STAIRCASE_START_X = STAIR_ART_X + 700; // 8770 -- where the descent starts
 // the climb and across the top landing to STAIRCASE_START_X, then the
 // descent above takes over.
 const UTSPRING_TAKEOVER_X = STAIR_ART_X + 16; // 8086
+// The staircase thought (config.js STAIRCASE_THOUGHT) starts one reading
+// time of walking (plus a small beat) before the takeover, so it has
+// faded by the time the utspring begins -- ~6946, just past the last
+// ground book.
+const STAIRCASE_THOUGHT_X = UTSPRING_TAKEOVER_X - STAIRCASE_THOUGHT.duration * PLAYER.moveSpeed - 60;
 const UTSPRING_END_X = STAIRCASE_START_X + UTSPRING_RUN_LENGTH; // 10120 -- where the run stops
 
 // Background-transition repair: the Lund-utspring -> Göteborg-city section
@@ -641,6 +646,8 @@ export const LEVEL = [
   { type: 'enemy-mathbook', x: MATHBOOK_GROUND_B_X },
 
   { type: 'platform', x: PLATFORM_C_X, y: platformTop(CLEARANCE_LOW) },
+
+  { type: 'thought-trigger', x: STAIRCASE_THOUGHT_X, text: STAIRCASE_THOUGHT.text, duration: STAIRCASE_THOUGHT.duration },
 
   // The utspring (AGENTS.md §3, PLAN.md task 3.5). No enemy may ever be
   // placed between PLATFORM_C_X and UTSPRING_END_X: this is the one

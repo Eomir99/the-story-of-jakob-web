@@ -56,6 +56,15 @@ const PHASE = {
 };
 
 // --- The two DOM pieces (ui.js) ---------------------------------------------
+// Whether the encounter is running (takeover to done). ui.js hides the
+// Skip to application control meanwhile: it sits in the bottom-left
+// corner, over the card tray, where a click meant for a card could leave
+// the game.
+let encounterListener = null;
+export function subscribeToReceptionRunning(listener) {
+  encounterListener = listener;
+}
+
 // Same one-listener shape as game.js's title card: this file owns when each
 // shows, ui.js owns the elements and hands the answers back.
 let choiceListener = null;
@@ -198,6 +207,7 @@ function currentRound(reception) {
 function enterPhase(reception, phase) {
   reception.phase = phase;
   reception.timer = 0;
+  if (encounterListener) encounterListener(encounterRunning(reception));
 }
 
 function say(reception, speaker, text, duration = null) {

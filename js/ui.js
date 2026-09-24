@@ -7,7 +7,7 @@ import { startFromTitle, subscribeToStateChange, subscribeToTitleCard, subscribe
 import { loadAssets } from './assets.js';
 import { initComicViewer, showComic, hideComic } from './comics.js';
 import { unlockMusic, setMusicMuted, setMusicVolume } from './music.js';
-import { subscribeToReceptionChoice, chooseReceptionOption, subscribeToReceptionRetry, requestReceptionRetry } from './reception.js';
+import { subscribeToReceptionChoice, chooseReceptionOption, subscribeToReceptionRetry, requestReceptionRetry, subscribeToReceptionRunning } from './reception.js';
 
 export function initUI() {
   initTitleScreen();
@@ -123,6 +123,14 @@ const VOLUME_STORAGE_KEY = 'story-of-jakob-volume';
 
 function initPersistentControls() {
   initVolumeSlider();
+  // Hidden (not removed, so volume and mute keep their place) while the
+  // Clinic reception runs -- see reception.js subscribeToReceptionRunning.
+  const skipControl = document.querySelector('.skip-control');
+  if (skipControl) {
+    subscribeToReceptionRunning((running) => {
+      skipControl.style.visibility = running ? 'hidden' : '';
+    });
+  }
   const muteButton = document.querySelector('#mute-button');
   if (!muteButton) return;
 

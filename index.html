@@ -50,14 +50,7 @@
             <p id="loading-status" class="loading-status" aria-live="polite">
               Loading… <span id="loading-percent">0%</span>
             </p>
-            <a class="skip-link" href="./application.html">Skip to application</a>
           </div>
-
-          <ul class="controls-list" aria-label="Controls">
-            <li><strong>Move</strong> — WASD / Arrow Keys</li>
-            <li><strong>Jump</strong> — Space</li>
-            <li><strong>Shoot</strong> — F or Left Click</li>
-          </ul>
         </div>
       </div>
 
@@ -146,8 +139,10 @@
         screen, which already has its own Skip link. Not a settings menu
         -- these two controls are the entire out-of-game UI.
       -->
+      <!-- Skip to application sits alone in the bottom-left corner; volume
+           and mute in the bottom-right. The title screen shows only Start. -->
       <div id="persistent-controls" class="persistent-controls" hidden>
-        <a class="persistent-control" href="./application.html">Skip to application</a>
+        <a class="persistent-control skip-control" href="./application.html">Skip to application</a>
         <label class="persistent-control volume-control">
           Volume
           <input id="volume-slider" type="range" min="0" max="100" step="5" value="100" aria-label="Music volume">
