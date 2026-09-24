@@ -30,7 +30,7 @@
 // together, then a quiet stretch, then one on a platform) rather than
 // landing on a steady rhythm, which would read as filler.
 
-import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
+import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, UF_THOUGHT, USA_THOUGHTS, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
 
 const SPAWN_X = 120;
 
@@ -56,9 +56,7 @@ const platformTop = (clearance) => WORLD.groundY - clearance;
 //                               the shooting lesson; it cannot be lost.
 //   -  MATHBOOK_GROUND_A_X      on the ground after the first two jumps.
 //   2  MATHBOOK_2_PLATFORM_X    on a ledge -- jump-timed shot, or walk under.
-//   3  MATHBOOK_3_PLATFORM_X    past a real gap between two platforms --
-//                               jump it while its shot may be in the air,
-//                               or skip it at ground level like the ledge.
+//   3  MATHBOOK_3_PLATFORM_X    on a ledge just past the UF stand.
 //   -  MATHBOOK_GROUND_B_X      on the ground before the last jump and the
 //                               climb to the staircase.
 const TUTORIAL_BLOCK_X = 760; // soon after the intro, before any enemy
@@ -67,10 +65,12 @@ const PLATFORM_A_X = 2450; // after the Lund arrow sign
 const PLATFORM_B_X = 2800; // clustered with A
 const MATHBOOK_GROUND_A_X = PLATFORM_B_X + 700; // 3500
 const MATHBOOK_2_PLATFORM_X = PLATFORM_B_X + 1300; // 4100 -- carries the ledge book
-const GAP_APPROACH_PLATFORM_X = MATHBOOK_2_PLATFORM_X + 1300; // 5400 -- launch side of the gap
-const MATHBOOK_3_GAP_WIDTH = 200; // px -- comfortably under the ~268px max jump range
-const MATHBOOK_3_PLATFORM_X = GAP_APPROACH_PLATFORM_X + PLATFORM.width + MATHBOOK_3_GAP_WIDTH; // 5820 -- carries the far-side book
-const MATHBOOK_GROUND_B_X = MATHBOOK_3_PLATFORM_X + 950; // 6770
+// The UF stand (UF_STAND_X, 1100px wide) stands between the ledge book and
+// the third book. Nothing gameplay sits in front of it: the gap's launch
+// platform that used to stand at 5400 is gone, and the third book's
+// platform stands just past the stand's right edge.
+const MATHBOOK_3_PLATFORM_X = 6150; // carries the third book, clear of the UF stand (ends 5980)
+const MATHBOOK_GROUND_B_X = 6770;
 
 // Checkpoints (AGENTS.md §6: invisible checkpoints; polish-pass audit
 // finding A2). Before this, Lund carried none at all -- the only
@@ -79,7 +79,7 @@ const MATHBOOK_GROUND_B_X = MATHBOOK_3_PLATFORM_X + 950; // 6770
 // 18.6s of running back through content that had already been cleared.
 // Three checkpoints keep every death in Lund short:
 const CHECKPOINT_AFTER_MATHBOOK_1_X = MATHBOOK_1_X + 200; // 1100 -- past the tutorial book
-const CHECKPOINT_BEFORE_GAP_X = GAP_APPROACH_PLATFORM_X - 300; // 5100 -- short of the gap jump
+const CHECKPOINT_BEFORE_GAP_X = 5100; // short of the UF stand and the third book
 // The last checkpoint before the utspring sits at the foot of the
 // staircase (CHECKPOINT_AT_STAIRCASE_FOOT_X, below): a respawn there climbs
 // the steps again rather than being lifted onto them by the handover.
@@ -329,6 +329,12 @@ const SECTION_USA_X = SECTION_CLINIC_X + CLINIC_LENGTH; // 28331
 // A death anywhere in USA resumes here, not back at the Research Golem's
 // suit pickup (the last checkpoint before it).
 const CHECKPOINT_USA_X = SECTION_USA_X + 100;
+// Jakob's USA thoughts (config.js USA_THOUGHTS): the first soon after
+// arriving, the second placed one bubble's reading time of walking later
+// (duration * PLAYER.moveSpeed, plus a beat) so it follows as the first
+// fades instead of cutting it off.
+const USA_THOUGHT_ARRIVAL_X = SECTION_USA_X + 250;
+const USA_THOUGHT_EXPERIENCE_X = USA_THOUGHT_ARRIVAL_X + USA_THOUGHTS.arrival.duration * PLAYER.moveSpeed + 150;
 const PLATFORM_J_X = SECTION_USA_X + 1200; // 29531
 // The football helmets (USA, exchange semester) need open ground to
 // charge, not a small elevated platform, so they stand directly on the
@@ -339,6 +345,11 @@ const USA_HELMET_X = SECTION_USA_X + 3200; // 31531
 const PLATFORM_K_X = USA_HELMET_X + 1600; // 33131
 const PLATFORM_L_X = PLATFORM_K_X + 900; // 34031 -- clustered with K
 const USA_HELMET_2_X = PLATFORM_L_X + 800; // 34831
+// The football thought fires once the second helmet is on screen: walking
+// right, the screen shows ~480px ahead of Jakob (config.js
+// ENEMY_HELMET.windUpRange), so 420px short of its left edge has the whole
+// helmet in view -- just before it can wind up (380px, centre to centre).
+const USA_THOUGHT_FOOTBALL_X = USA_HELMET_2_X - 420;
 const SECTION_PORTAL_HAGA_X = PLATFORM_L_X + 1400; // 35431 -- where USA ends
 
 // --- Haga: the Graduation portal lead-in (~1,500px) ------------------------
@@ -478,7 +489,6 @@ const LEVEL_END_X = ARMOUR_X + 600; // 37471
 // far away a thing reads is a layout decision, and the same object could
 // sit on the horizon in one place and close by in another.
 const UF_STAND_X = 4880; // takes the former Polhem mech position; v2 centred where v1 was (5430)
-const STADIUM_X = USA_HELMET_X + 600; // same close spacing to the helmet as before
 // World props (author request). Placement x is the art's left edge.
 const SIGN_LUND_ARROW_X = 1950; // after the movement, jump and shoot lessons
 export const TUTORIAL_END_X = SIGN_LUND_ARROW_X;
@@ -535,13 +545,12 @@ export const LEVEL = [
   // edge stays behind the stair pillar at every camera position.
   { type: 'landmark', landmark: 'utspring-polhem', x: POLHEM_ART_X, parallax: 1 },
   { type: 'landmark', landmark: 'utspring-staircase', x: STAIR_ART_X, parallax: 1 },
-  { type: 'landmark', landmark: 'stadium', x: STADIUM_X, parallax: 0.35 },
   { type: 'landmark', landmark: 'sign-lund-arrow', x: SIGN_LUND_ARROW_X, parallax: 1 },
   { type: 'landmark', landmark: 'sign-welcome-lund', x: SIGN_WELCOME_LUND_X, parallax: 1 },
   { type: 'landmark', landmark: 'sign-gothenburg-arrow', x: SIGN_GOTHENBURG_X, parallax: 1, showAfterUtspring: true },
   // Passing the Gothenburg sign: Jakob's thought as Lund is left behind.
   // Never takes control (config.js GOTHENBURG_THOUGHT).
-  { type: 'thought-trigger', x: SIGN_GOTHENBURG_X + LANDMARK.types['sign-gothenburg-arrow'].width / 2, text: GOTHENBURG_THOUGHT.text },
+  { type: 'thought-trigger', x: SIGN_GOTHENBURG_X + LANDMARK.types['sign-gothenburg-arrow'].width / 2, text: GOTHENBURG_THOUGHT.text, duration: GOTHENBURG_THOUGHT.duration },
   { type: 'landmark', landmark: 'departures-board', x: DEPARTURES_BOARD_X, parallax: 1 },
 
   // Research Golem venue art (AGENTS.md §6's boss-specific world-space
@@ -585,7 +594,7 @@ export const LEVEL = [
   //      placements below pick up the faster/tougher default tuning in
   //      config.js (task 1); this one keeps the old, gentler numbers as an
   //      explicit per-instance override so the tutorial never gets harder.
-  { type: 'enemy-mathbook', x: MATHBOOK_1_X, hp: 2, idleDuration: 6.2 },
+  { type: 'enemy-mathbook', x: MATHBOOK_1_X, hp: 5, idleDuration: 6.2 },
 
   // Audit finding A2: the tutorial encounter is cleared, so a death from
   // here on no longer walks all the way back to SPAWN_X.
@@ -615,11 +624,12 @@ export const LEVEL = [
   // to the book on the far side never replays the ledge encounter too.
   { type: 'checkpoint', x: CHECKPOINT_BEFORE_GAP_X },
 
-  //   3  behind a real gap between two platforms: a launch platform, then
-  //      MATHBOOK_3_GAP_WIDTH of open air, then the book's platform.
-  //      Reachable by jumping the gap while its slow shot may already be
-  //      in flight, or skippable at ground level like the ledge.
-  { type: 'platform', x: GAP_APPROACH_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
+  // Jakob's thought as he walks past the UF stand's Candell UF stall
+  // (config.js UF_THOUGHT). Placeholder copy -- author-owned.
+  { type: 'thought-trigger', x: UF_STAND_X + 520, text: UF_THOUGHT.text, duration: UF_THOUGHT.duration },
+
+  //   3  on a ledge just past the UF stand: reached with one jump from the
+  //      ground, or skipped at ground level like the ledge.
   { type: 'platform', x: MATHBOOK_3_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
   {
     type: 'enemy-mathbook',
@@ -813,6 +823,9 @@ export const LEVEL = [
     round3Cards: ['green', 'red', 'red', 'yellow', 'green', 'yellow', 'red', 'green', 'yellow', 'red'], // top first
   },
   { type: 'checkpoint', x: CHECKPOINT_USA_X },
+  { type: 'thought-trigger', x: USA_THOUGHT_ARRIVAL_X, text: USA_THOUGHTS.arrival.text, duration: USA_THOUGHTS.arrival.duration },
+  { type: 'thought-trigger', x: USA_THOUGHT_EXPERIENCE_X, text: USA_THOUGHTS.experience.text, duration: USA_THOUGHTS.experience.duration },
+  { type: 'thought-trigger', x: USA_THOUGHT_FOOTBALL_X, text: USA_THOUGHTS.football.text, duration: USA_THOUGHTS.football.duration },
   { type: 'platform', x: PLATFORM_J_X, y: platformTop(CLEARANCE_HIGH) },
 
   // The football helmets (USA, exchange semester): idle, telegraph,

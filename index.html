@@ -32,13 +32,15 @@
         placeholder. AGENTS.md §5: menus are never drawn on canvas. Shown/
         hidden by ui.js; the Start button hands off to game.js.
       -->
-      <div id="title-screen" class="dom-screen">
+      <div id="title-screen" class="dom-screen title-screen">
         <div class="title-content">
-          <h1>The Story of Jakob</h1>
-          <p class="tagline">An interactive CV — a short playable application for Paradox Interactive.</p>
+          <!-- The title is painted into the title art (assets/ui/
+               title-screen.webp); these stay for screen readers. -->
+          <h1 class="visually-hidden">The Story of Jakob</h1>
+          <p class="visually-hidden">An interactive CV — a short playable application for Paradox Interactive.</p>
 
           <div class="title-actions">
-            <button id="start-button" type="button" disabled>Start</button>
+            <button id="start-button" type="button" disabled><img src="./assets/ui/start-button.webp" alt="Start" width="480" height="134"></button>
             <!--
               Task 4.2: title renders immediately, Start stays disabled
               and this shows a percentage until the asset manifest

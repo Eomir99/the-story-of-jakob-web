@@ -39,73 +39,97 @@
   display: none;
 }
 
-/* Title screen (task 4.1) */
+/* Title screen (task 4.1). The author's title art fills the 16:9
+   viewport (the title itself is painted into it); everything the player
+   uses sits along the bottom middle, over a soft dark fade so the small
+   text stays readable on the art. */
+
+.title-screen {
+  background: #0d1117 url("../assets/ui/title-screen.webp") center / cover no-repeat;
+  align-items: flex-end;
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
 
 .title-content {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 1.5rem;
-  padding: 2rem;
-}
-
-.title-content h1 {
-  margin: 0;
-  font-size: clamp(2rem, 5vw, 3rem);
-}
-
-.tagline {
-  margin: 0;
-  color: #8b93a5;
-  max-width: 32rem;
+  gap: 0.5rem;
+  padding: 3rem 1rem 0.9rem;
+  background: linear-gradient(to bottom, rgba(13, 17, 23, 0), rgba(13, 17, 23, 0.75));
+  text-shadow: 0 1px 3px #0d1117;
 }
 
 .title-actions {
+  width: 100%;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.75rem;
+  gap: 0.35rem;
 }
 
+/* The Start button is the author's art (assets/ui/start-button.webp);
+   the button itself is only the click target around it. */
 #start-button {
-  font: inherit;
-  font-size: 1.25rem;
-  padding: 0.75rem 2.5rem;
-  background: #f6c453;
-  color: #1b2333;
+  width: 18%;
+  min-width: 150px;
+  padding: 0;
+  background: none;
   border: none;
-  border-radius: 0.4rem;
   cursor: pointer;
+  transition: transform 0.12s ease, filter 0.12s ease;
+}
+
+#start-button img {
+  display: block;
+  width: 100%;
+  height: auto;
 }
 
 #start-button:hover,
 #start-button:focus-visible {
-  background: #ffd873;
+  transform: scale(1.05);
+  filter: brightness(1.12) drop-shadow(0 0 10px rgba(255, 200, 90, 0.6));
+  outline: none;
 }
 
+#start-button:focus-visible {
+  filter: brightness(1.12) drop-shadow(0 0 10px rgba(255, 200, 90, 0.6)) drop-shadow(0 0 2px #fff);
+}
+
+/* Greyed out until the asset manifest has loaded (task 4.2). */
 #start-button:disabled {
-  background: #4a5568;
-  color: #8b93a5;
   cursor: not-allowed;
+  transform: none;
+  filter: grayscale(0.85) brightness(0.7);
 }
 
-/* Task 4.2: visible only while the (currently empty) asset manifest is
-   loading; ui.js hides it the instant Start is enabled. */
+/* Task 4.2: visible only while the asset manifest is loading; ui.js
+   hides it the instant Start is enabled. */
 .loading-status {
   margin: 0;
   font-size: 0.85rem;
-  color: #8b93a5;
+  color: #e6e9f0;
 }
 
 .skip-link {
-  color: #8b93a5;
-  font-size: 0.9rem;
+  color: #dfe3ec;
+  font-size: 0.85rem;
   text-decoration: underline;
 }
 
 .skip-link:hover,
 .skip-link:focus-visible {
-  color: #f7f3e3;
+  color: #ffffff;
 }
 
 /* A non-gamer must never have to guess the controls (PLAN.md 4.1). */
@@ -113,16 +137,16 @@
   display: flex;
   flex-wrap: wrap;
   justify-content: center;
-  gap: 0.4rem 1.25rem;
+  gap: 0.2rem 1.25rem;
   list-style: none;
   margin: 0;
   padding: 0;
-  font-size: 0.95rem;
-  color: #c7cddb;
+  font-size: 0.85rem;
+  color: #dfe3ec;
 }
 
 .controls-list li strong {
-  color: #f7f3e3;
+  color: #ffffff;
 }
 
 /* Comic viewer (task 4.3; task 2, playtest round 2: panels stack instead

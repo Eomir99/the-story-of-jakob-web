@@ -10,8 +10,8 @@
 //            through it.
 //   helmet   the American football helmet (USA, exchange semester): idles
 //            facing the player, telegraphs, charges in a straight line
-//            until it hits a bound, then recovers dazed -- the only time
-//            it can be hurt. Teaches "dodge, then punish".
+//            until it hits a bound, then recovers dazed (harmless to
+//            touch). Every hit damages it, in any state.
 
 import { ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, TELEGRAPH, DAMAGE_FLASH, HAZARD, ACTIVATION } from './config.js';
 import { getImage } from './assets.js';
@@ -187,6 +187,8 @@ function updateHelmetEnemy(enemy, dt, player) {
 
     enemy.stateTimer += dt;
     if (enemy.stateTimer < ENEMY_HELMET.idleMinDuration) return [];
+    // Never from off screen (config.js ENEMY_HELMET.windUpRange).
+    if (Math.abs(playerCenterX - enemyCenterX) > ENEMY_HELMET.windUpRange) return [];
     // AGENTS.md brief: never wind up while the player is directly overhead
     // at point-blank range -- the tell would be unreadable. Just keep
     // idling (re-facing) until that's no longer true.
@@ -228,8 +230,7 @@ function updateHelmetEnemy(enemy, dt, player) {
     return [];
   }
 
-  // recovering: cannot act, deals no contact damage (contactDamageFor),
-  // and is the only state damageEnemy accepts a hit in.
+  // recovering: cannot act and deals no contact damage (contactDamageFor).
   enemy.stateTimer -= dt;
   if (enemy.stateTimer <= 0) {
     enemy.state = 'idle';
@@ -267,9 +268,9 @@ export function damageEnemy(enemy, amount) {
   // projectile range (PROJECTILE.lifetime * .speed) to otherwise reach an
   // enemy that hasn't activated yet.
   if (enemy.active === false) return false;
-  // The helmet is invulnerable outside recovery -- charging (and idling,
-  // and telegraphing) cannot be interrupted by damage.
-  if (enemy.type === 'helmet' && enemy.state !== 'recovering') return false;
+  // Every shot counts, in every state (author request): the helmet used to
+  // be invulnerable outside its short dazed window, and most shots landed
+  // with no flash and no damage at all. Hits never interrupt a charge.
   const config = enemy.type === 'helmet' ? ENEMY_HELMET : ENEMY_MATHBOOK;
   enemy.hp -= amount;
   enemy.hitFlash = config.hitFlashDuration;
@@ -373,8 +374,8 @@ function stateTint(enemy, spec) {
     return { color: ENEMY_HELMET.telegraphColor, alpha: progress * spec.telegraphTintAlpha };
   }
   if (enemy.type === 'helmet' && enemy.state === 'recovering') {
-    // Dazed and vulnerable -- visibly different from every other state so
-    // "hit it now" reads at a glance, not just "it stopped moving".
+    // Dazed and harmless to touch -- visibly different from every other
+    // state so "it's safe now" reads at a glance.
     return { color: ENEMY_HELMET.recoveryColor, alpha: spec.recoveryTintAlpha };
   }
   return null;
@@ -441,8 +442,8 @@ function stateColor(enemy) {
     return lerpColor(COLOR.helmet, ENEMY_HELMET.telegraphColor, progress);
   }
   if (enemy.type === 'helmet' && enemy.state === 'recovering') {
-    // Dazed and vulnerable -- visibly different from every other state so
-    // "hit it now" reads at a glance, not just "it stopped moving".
+    // Dazed and harmless to touch -- visibly different from every other
+    // state so "it's safe now" reads at a glance.
     return ENEMY_HELMET.recoveryColor;
   }
   return COLOR[enemy.type];

@@ -321,11 +321,13 @@ export const LANDMARK = {
   types: {
     // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
     // background". Never abbreviated on first appearance.
-    // v2: the row of UF stalls with Candell UF's awards screen
-    // (uf-stand-v2.png). Delivered 1:1 (scripts/runtime-assets.py);
-    // baselineY is the row the front crates and chalkboard stand on.
-    'uf-stand': { path: 'assets/backgrounds/uf-stand.webp', colorMode: 'full-color', width: 1100, height: 345, baselineY: 338, alpha: 1 },
-    stadium: { label: 'STADIUM', width: 900, height: 260, color: '#2f4a63' },
+    // v3: the row of UF stalls with Candell UF's awards screen
+    // (uf-stand-v3.png), flat-bottomed. Delivered 1:1
+    // (scripts/runtime-assets.py). baselineY puts the left stalls' bottom
+    // edge -- the highest of the stands' bottoms -- exactly on the floor;
+    // the Candell stall and its chalkboard reach 3-8px lower and tuck
+    // behind the ground, so every part sits flush.
+    'uf-stand': { path: 'assets/backgrounds/uf-stand.webp', colorMode: 'full-color', width: 1100, height: 330, baselineY: 321, alpha: 1 },
 
     // The utspring scenery (author art, delivered 1:1 at these boxes by
     // scripts/runtime-assets.py). The staircase's baselineY is its bottom
@@ -895,6 +897,23 @@ export const STAIRCASE = {
 // Jakob's thought as he passes the Gothenburg sign after the utspring
 // (level.js 'thought-trigger'). Drawn like Graduation's thought bubbles,
 // over his head, and never takes control or pauses anything.
+// Jakob's thought passing the UF stand's Candell UF stall (level.js
+// 'thought-trigger'). Same drawing and rules as GOTHENBURG_THOUGHT below.
+// Placeholder copy -- author-owned (AGENTS.md §10), rewrite freely.
+export const UF_THOUGHT = {
+  text: 'Candell UF, my first company. Business Report of the Year in Skåne!',
+  duration: 3.6, // s on screen
+};
+
+// Jakob's thoughts in USA (level.js 'thought-trigger'): two in a row just
+// after arriving, then one as the second football helmet comes into view.
+// Placeholder copy -- author-owned (AGENTS.md §10), rewrite freely.
+export const USA_THOUGHTS = {
+  arrival: { text: 'Everything really is bigger in America. Especially the portions.', duration: 3.2 },
+  experience: { text: 'Columbia, South Carolina: a great time, and an invaluable experience.', duration: 3.6 },
+  football: { text: 'American football: a fun spectacle… but they really gotta learn to pick up the pace.', duration: 3.8 },
+};
+
 export const GOTHENBURG_THOUGHT = {
   text: 'Armed with the basics, let’s continue on the business path!',
   duration: 3.2, // s on screen
@@ -1036,7 +1055,7 @@ export const ENEMY_MATHBOOK = {
   shotHitboxTop: 60,
   color: '#8a5a3a', // closed cover
   telegraphColor: '#e2b23c', // opens toward this before firing
-  hp: 4, // was 2
+  hp: 5, // shots to kill (was 4; the first book overrides it in level.js)
   contactDamage: 1,
   hitFlashDuration: 0.12, // s
 
@@ -1124,9 +1143,10 @@ export const ENEMY_INBOX = {
 
 // The football helmet (USA, exchange semester): idle -> telegraph -> charge
 // -> recovery, on a loop. It teaches "dodge, then punish" -- exactly what
-// the Graduation boss later assumes the player already knows. Invulnerable
-// outside recovery; recovery is the only time it can be hurt, and it deals
-// no contact damage while dazed there.
+// the Graduation boss later assumes the player already knows. Every shot
+// damages it, in any state (it used to be invulnerable outside recovery,
+// which read as shots doing nothing); it deals no contact damage while
+// dazed.
 // Playtest round 2 (task 1): died too fast -- one or two charge cycles.
 // hp 6 -> 16, aiming for three-to-four full cycles instead. The wind-up
 // itself is unchanged (still 0.8-1.0s, this enemy is meant to be readable);
@@ -1140,15 +1160,21 @@ export const ENEMY_HELMET = {
   color: '#5a7a9a',
   telegraphColor: '#e2b23c', // same wind-up tell colour as every other telegraph
   recoveryColor: '#8a95a8', // dazed -- visibly different so "hit it now" reads at a glance
-  hp: 16, // was 6 -- three-to-four full charge cycles for a competent player
+  hp: 8, // was 16, which took far too long -- two charge cycles
   contactDamage: 1,
-  hitFlashDuration: 0.12, // s
+  hitFlashDuration: 0.18, // s -- long enough to catch over the charge and the dazed tint
 
   idleMinDuration: 0.6, // s of idle before it's willing to wind up again
+  // It only winds up while the player is within this many px (centre to
+  // centre). Walking right, the camera trails Jakob so only ~480px ahead
+  // of him is on screen (measured); 380 keeps the whole helmet in view
+  // with margin before its wind-up starts. It used to wake 640px out and
+  // charge in from off screen.
+  windUpRange: 380,
   telegraphDuration: 0.9, // s -- AGENTS.md §4's 0.8-1.0s range
   chargeSpeed: 520, // px/s
   chargeMaxDuration: 1.4, // s hard cap, in case it never reaches a bound
-  recoveryDuration: 1.5, // s, dazed and damageable -- the only time it can be hurt
+  recoveryDuration: 1.5, // s, dazed: stops, and touching it does no damage
 
   // Skip starting a wind-up if the player is this close horizontally and
   // at least this far above the helmet's top -- directly overhead (e.g.
@@ -1179,12 +1205,15 @@ export const ENEMY_HELMET = {
     // Dazed recovery -- the one state that means "hit it now", so it gets
     // the heaviest wash of the three.
     recoveryTintAlpha: 0.55,
-    hitFlashTintAlpha: 0.7,
+    hitFlashTintAlpha: 0.9, // strong enough to read over the telegraph and dazed tints
   },
 };
 
-// Kill barks (AGENTS.md §4: "Short spoken barks after each kill, tying the
-// kill to a CV line... never pause the game"). Text lines are placeholder
+// Barks: short spoken lines over Jakob that never pause the game. Kills no
+// longer bark (author request) -- CV lines come from placed thought
+// bubbles instead (UF_THOUGHT); the look below is still used by his spoken
+// reaction at the Research Golem's door. The per-enemy lines are unused.
+// Originally kill barks (AGENTS.md §4). Text lines are placeholder
 // copy -- real CV lines are an open item (AGENTS.md §10) -- but the
 // mechanism (spawn above the player, float up, fade, never block input)
 // is real. One line per enemy type, cycled in order so repeat kills of the

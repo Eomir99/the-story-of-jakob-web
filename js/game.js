@@ -1,6 +1,6 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, ENEMY_MATHBOOK } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, ENEMY_MATHBOOK } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { getImage } from './assets.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
@@ -136,7 +136,7 @@ let sectionElapsed = 0;
 let timedSectionIndex = -1;
 let utspringTrigger; // { x, descentX, markY } -- hands control to the utspring at x, or null
 let utspringClouds; // [{ x, y, text, shownFor }] -- level.js 'utspring-cloud'
-let thoughtTriggers; // sorted ascending by x: [{ x, text }] -- level.js 'thought-trigger'
+let thoughtTriggers; // sorted ascending by x: [{ x, text, duration }] -- level.js 'thought-trigger'
 let nextThoughtTriggerIndex;
 let activeThought = null; // { text, timeLeft } while one is over Jakob's head
 let comicTriggers; // sorted ascending by x: [{ x, comicId, next }]
@@ -516,7 +516,7 @@ function drawUtspringClouds(ctx) {
 }
 
 // Jakob's passing thought (level.js 'thought-trigger', at the Gothenburg
-// sign): shown over his head for GOTHENBURG_THOUGHT.duration. Nothing
+// sign, and the UF stand): shown over his head for the entry's duration. Nothing
 // pauses and control is never taken -- like a bark.
 function updateThoughtTriggers(dt) {
   if (activeThought) {
@@ -525,7 +525,7 @@ function updateThoughtTriggers(dt) {
   }
   const next = thoughtTriggers[nextThoughtTriggerIndex];
   if (next && !player.dead && player.x + player.width / 2 >= next.x) {
-    activeThought = { text: next.text, timeLeft: GOTHENBURG_THOUGHT.duration };
+    activeThought = { text: next.text, timeLeft: next.duration };
     nextThoughtTriggerIndex += 1;
   }
 }
@@ -971,7 +971,7 @@ function loadLevel() {
     } else if (entry.type === 'utspring-cloud') {
       utspringClouds.push({ x: entry.x, y, text: entry.text, shownFor: 0 });
     } else if (entry.type === 'thought-trigger') {
-      thoughtEntries.push({ x: entry.x, text: entry.text });
+      thoughtEntries.push({ x: entry.x, text: entry.text, duration: entry.duration });
     } else if (entry.type === 'comic-trigger') {
       triggers.push({ x: entry.x, comicId: entry.comicId, next: entry.next });
     } else if (entry.type === 'reception-encounter') {
@@ -1083,16 +1083,17 @@ function loop(now) {
 // names its track in level.js; the two boss fights override that while
 // they are running -- the Research Golem only until it falls (exploration
 // is back for the walk out), Graduation from its first attack to the end
-// of the game. Neither a comic nor a scripted boss approach changes the
-// music: both keep whatever was playing when they began. The approach
-// matters because its walk can wake the boss a step before the comic
-// opens -- the hold keeps exploration under the approach and its comic, so
-// the boss music starts with the fight itself.
+// of the game. Comics are silent (author request: the soundtrack doesn't
+// fit them; they may get their own sound later): the music fades out as a
+// comic opens and the right track comes back when it ends, picking up
+// where it left off. A scripted boss approach doesn't change the music --
+// it keeps whatever was playing, because its walk can wake the boss a step
+// before the comic opens and the boss music must start with the fight
+// itself, not under the approach.
 let gameplayMusic = null;
 function currentMusic() {
-  if (gameState === STATE.TITLE) return null;
-  if ((gameState === STATE.COMIC || approachPhase !== null) && gameplayMusic !== null) return gameplayMusic;
-  if (gameState === STATE.APPLICATION) return gameplayMusic;
+  if (gameState === STATE.TITLE || gameState === STATE.COMIC || gameState === STATE.APPLICATION) return null;
+  if (approachPhase !== null && gameplayMusic !== null) return gameplayMusic;
   if (boss && boss.active && boss.alive) gameplayMusic = 'research-golem';
   else if (graduationBoss && graduationBoss.active) gameplayMusic = 'graduation';
   else gameplayMusic = backgroundSections[sectionIndexAt(player.x)].music ?? null;
@@ -1390,11 +1391,9 @@ function resolveProjectileHits() {
       if (aabbOverlap(projectile, shotHitbox(enemy))) {
         // hp before/after is what separates a shot that did damage from
         // one that was merely absorbed -- the Endless Inbox can't be shot
-        // down at all, and the football helmet is invulnerable outside
-        // recovery. Neither should feel like a hit landed.
+        // down at all, so it shouldn't feel like a hit landed.
         const hpBefore = enemy.hp;
         const killed = damageEnemy(enemy, 1);
-        if (killed) spawnBark(player, enemy.type); // task 3.9
         if (killed) spawnDeathBurst(enemy, 1);
         if (killed) requestShake(SHAKE.enemyDeath);
         if (killed) requestHitstop(HITSTOP.enemyDeath);
