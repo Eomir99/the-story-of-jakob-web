@@ -229,7 +229,8 @@ function spawnProjectile(player) {
   const dir = player.facing;
   return {
     x: dir > 0 ? player.x + player.width : player.x - PROJECTILE.width,
-    y: player.y + player.height / 2 - PROJECTILE.height / 2,
+    // Out of the fist, not the middle of the body (config.js PLAYER.shotHeight).
+    y: player.y + player.height - PLAYER.shotHeight - PROJECTILE.height / 2,
     width: PROJECTILE.width,
     height: PROJECTILE.height,
     vx: PROJECTILE.speed * dir,

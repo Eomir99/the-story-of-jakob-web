@@ -74,11 +74,35 @@ function advance() {
 // size (load event, or already cached/complete) before scrolling, since
 // scrolling to an unsized image would land in the wrong place the instant
 // it decodes and the page reflows under it.
+//
+// Side-by-side panels (comic-data.js `sameRow`): the row is laid out in
+// full when its first panel appears, with the later ones present but
+// invisible, so revealing each on its own click never shifts the row.
 function addNextPanel() {
   currentPanelIndex += 1;
   const panel = currentPanels[currentPanelIndex];
-  const frame = buildPanelFrame(panel);
-  panelListEl.appendChild(frame);
+  let frame;
+  if (panel.sameRow) {
+    frame = panelListEl.querySelector('.comic-frame--waiting');
+    frame.classList.remove('comic-frame--waiting');
+  } else {
+    frame = buildPanelFrame(panel);
+    const partners = [];
+    for (let i = currentPanelIndex + 1; currentPanels[i] && currentPanels[i].sameRow; i++) partners.push(currentPanels[i]);
+    if (partners.length === 0) {
+      panelListEl.appendChild(frame);
+    } else {
+      const row = document.createElement('div');
+      row.className = 'comic-row';
+      row.appendChild(frame);
+      for (const partner of partners) {
+        const waiting = buildPanelFrame(partner);
+        waiting.classList.add('comic-frame--waiting');
+        row.appendChild(waiting);
+      }
+      panelListEl.appendChild(row);
+    }
+  }
 
   const img = frame.querySelector('img');
   const scrollToFrame = () => frame.scrollIntoView({ behavior: 'smooth', block: 'center' });

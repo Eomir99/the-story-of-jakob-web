@@ -56,6 +56,8 @@ export function createMathbookEnemy(x, y, overrides = {}) {
     // between wind-ups and { timer, duration } while one is running.
     cycleTimer: ENEMY_MATHBOOK.firstShotDelay,
     telegraph: null,
+    // Which of ENEMY_MATHBOOK.projectileSprite.symbols the next shot is.
+    nextSymbol: 0,
   };
 }
 
@@ -71,7 +73,8 @@ export function createInboxEnemy(x, y) {
   };
 }
 
-export function createFootballHelmetEnemy(x, y) {
+// minX/maxX: the room it may charge within (level.js 'enemy-helmet').
+export function createFootballHelmetEnemy(x, y, { minX, maxX }) {
   return {
     type: 'helmet',
     x,
@@ -89,11 +92,11 @@ export function createFootballHelmetEnemy(x, y) {
     state: 'idle',
     stateTimer: 0,
     vx: 0,
-    // The room it may charge within, centred on its spawn -- the level-data
-    // equivalent of "the edge of its platform" (AGENTS.md §5: placements,
-    // including how much room an enemy has, belong in level data, not code).
-    minX: x - ENEMY_HELMET.chargeRange / 2,
-    maxX: x + ENEMY_HELMET.chargeRange / 2,
+    // The room it may charge within -- the level-data equivalent of "the
+    // edge of its platform" (AGENTS.md §5: placements, including how much
+    // room an enemy has, belong in level data, not code).
+    minX,
+    maxX,
   };
 }
 
@@ -153,6 +156,9 @@ function updateMathbookEnemy(enemy, dt) {
 // Straight ahead, horizontal, always leftward -- see the roster comment
 // above for why "ahead" has a fixed direction here.
 function fireMathbookProjectile(enemy) {
+  const symbolCount = ENEMY_MATHBOOK.projectileSprite.symbols.length;
+  const symbol = enemy.nextSymbol;
+  enemy.nextSymbol = (enemy.nextSymbol + 1) % symbolCount;
   return {
     x: enemy.x - ENEMY_MATHBOOK.projectileWidth,
     y: enemy.y + enemy.height / 2 - ENEMY_MATHBOOK.projectileHeight / 2,
@@ -164,6 +170,7 @@ function fireMathbookProjectile(enemy) {
     owner: 'enemy',
     contactDamage: ENEMY_MATHBOOK.contactDamage,
     color: ENEMY_MATHBOOK.projectileColor,
+    mathbookSymbol: symbol, // cell index into the projectile sheet (game.js drawProjectiles)
   };
 }
 
@@ -236,6 +243,18 @@ function isPlayerPointBlank(enemy, player) {
   if (dx > ENEMY_HELMET.noChargeHorizontalRange) return false;
   const playerBottom = player.y + player.height;
   return enemy.y - playerBottom < ENEMY_HELMET.noChargeVerticalRange;
+}
+
+// The box player shots hit: the footprint, raised to the top of the drawn
+// art (config.js shotHitboxTop), since shots leave at the fist's height,
+// above the smaller footprints. Enemies without one use the footprint.
+const SHOT_HITBOX_TOP = {
+  mathbook: ENEMY_MATHBOOK.shotHitboxTop,
+  helmet: ENEMY_HELMET.shotHitboxTop,
+};
+export function shotHitbox(enemy) {
+  const top = Math.max(enemy.height, SHOT_HITBOX_TOP[enemy.type] ?? 0);
+  return { x: enemy.x, y: enemy.y + enemy.height - top, width: enemy.width, height: top };
 }
 
 // Returns true when this call is the hit that killed the enemy, so game.js

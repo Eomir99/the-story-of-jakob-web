@@ -19,6 +19,14 @@
         Your browser does not support canvas.
       </canvas>
 
+      <!-- Control copy for the short opening tutorial. Gameplay stays on
+           canvas; the words stay sharp in the DOM at every window size. -->
+      <div id="tutorial-hints" class="tutorial-hints" hidden aria-label="Opening controls">
+        <span>Move with A and D or<br>arrow keys</span>
+        <span>Jump with Space</span>
+        <span>Shoot with F or<br>left click</span>
+      </div>
+
       <!--
         Real DOM title screen (PLAN.md task 4.1), replacing game.js's
         placeholder. AGENTS.md §5: menus are never drawn on canvas. Shown/
@@ -138,6 +146,10 @@
       -->
       <div id="persistent-controls" class="persistent-controls" hidden>
         <a class="persistent-control" href="./application.html">Skip to application</a>
+        <label class="persistent-control volume-control">
+          Volume
+          <input id="volume-slider" type="range" min="0" max="100" step="5" value="100" aria-label="Music volume">
+        </label>
         <button id="mute-button" class="persistent-control" type="button">Mute</button>
       </div>
     </div>

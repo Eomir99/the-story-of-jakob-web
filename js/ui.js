@@ -3,9 +3,10 @@
 // file owns showing and hiding them and wiring their controls back into
 // game.js. game.js never touches the DOM itself.
 
-import { startFromTitle, subscribeToStateChange, subscribeToTitleCard, subscribeToResumeHint, STATE } from './game.js';
+import { startFromTitle, subscribeToStateChange, subscribeToTitleCard, subscribeToTutorialVisibility, subscribeToResumeHint, STATE } from './game.js';
 import { loadAssets } from './assets.js';
 import { initComicViewer, showComic, hideComic } from './comics.js';
+import { unlockMusic, setMusicMuted, setMusicVolume } from './music.js';
 import { subscribeToReceptionChoice, chooseReceptionOption, subscribeToReceptionRetry, requestReceptionRetry } from './reception.js';
 
 export function initUI() {
@@ -13,6 +14,7 @@ export function initUI() {
   initComicViewer();
   initPersistentControls();
   initStudentmossaCard();
+  initTutorialHints();
   initResumeHint();
   initReceptionChoice();
 
@@ -35,6 +37,10 @@ export function initUI() {
     }
 
     if (persistentControls) persistentControls.hidden = state === STATE.TITLE;
+    if (state !== STATE.PLAYING) {
+      const hints = document.querySelector('#tutorial-hints');
+      if (hints) hints.hidden = true;
+    }
 
     if (state === STATE.APPLICATION) window.location.href = './application.html';
   });
@@ -50,6 +56,14 @@ function initStudentmossaCard() {
   subscribeToTitleCard((visible, opacity) => {
     card.hidden = !visible;
     card.style.opacity = String(opacity);
+  });
+}
+
+function initTutorialHints() {
+  const hints = document.querySelector('#tutorial-hints');
+  if (!hints) return;
+  subscribeToTutorialVisibility((visible) => {
+    hints.hidden = !visible;
   });
 }
 
@@ -97,23 +111,51 @@ function initReceptionChoice() {
   });
 }
 
-// Mute/Unmute (task 4.4). No audio module exists yet (Milestone 7) --
-// this is the real toggle and state, just with nothing hooked up to play
-// or silence yet. Milestone 7 reads isMuted() before playing anything;
-// the control itself never has to change.
+// Mute/Unmute (task 4.4). Silences the music (music.js); anything that
+// plays sound later reads isMuted() too. The volume slider beside it sets
+// the music level, remembered in this browser when storage allows.
 let muted = false;
 export function isMuted() {
   return muted;
 }
 
+const VOLUME_STORAGE_KEY = 'story-of-jakob-volume';
+
 function initPersistentControls() {
+  initVolumeSlider();
   const muteButton = document.querySelector('#mute-button');
   if (!muteButton) return;
 
   muteButton.addEventListener('click', () => {
     muted = !muted;
     muteButton.textContent = muted ? 'Unmute' : 'Mute';
+    setMusicMuted(muted);
   });
+}
+
+function initVolumeSlider() {
+  const slider = document.querySelector('#volume-slider');
+  if (!slider) return;
+
+  try {
+    const saved = window.localStorage.getItem(VOLUME_STORAGE_KEY);
+    if (saved !== null && !Number.isNaN(Number(saved))) slider.value = saved;
+  } catch {
+    // Storage blocked (private window, settings): the slider still works.
+  }
+  setMusicVolume(Number(slider.value) / 100);
+
+  slider.addEventListener('input', () => {
+    setMusicVolume(Number(slider.value) / 100);
+    try {
+      window.localStorage.setItem(VOLUME_STORAGE_KEY, slider.value);
+    } catch {
+      // Not remembered, that's all.
+    }
+  });
+  // Hand focus back to the page after a drag, so the arrow keys move
+  // Jakob again instead of the slider.
+  slider.addEventListener('pointerup', () => slider.blur());
 }
 
 function initTitleScreen() {
@@ -125,6 +167,8 @@ function initTitleScreen() {
 
   startButton.addEventListener('click', () => {
     screen.hidden = true;
+    // Inside the click, so browsers allow the music to start (autoplay).
+    unlockMusic();
     startFromTitle();
   });
 

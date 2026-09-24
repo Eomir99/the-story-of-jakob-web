@@ -69,6 +69,15 @@ export const WORLD = {
   // fillColor replaces groundColor underneath it: the ledge floats in the
   // sky, so what shows through its ragged bottom edge is cloud haze (the
   // gu-ceremony gradient's bottom colour), not the dark earth slab.
+  // The Clinic's floor: polished tiles over rocky earth
+  // (clinic-ground-v2.png). Same rules as groundTexture, but drawn only
+  // across the Clinic section's own x range (level.js background-section
+  // `ground`), tiled from its start.
+  clinicGroundTexture: {
+    path: 'assets/backgrounds/clinic-ground.webp',
+    tileWidth: 1742,
+    tileHeight: 363,
+  },
   graduationGroundTexture: {
     path: 'assets/backgrounds/graduation-ground.webp',
     tileWidth: 1980,
@@ -151,12 +160,16 @@ export const BACKGROUNDS = {
     ],
   },
 
-  // 3 -- Utspring: approved school artwork only here; other areas stay unchanged.
+  // 3 -- Utspring: back to Lund town's own far and mid strips. The school
+  // is no longer a repeating mid strip -- Polhemskolan and the staircase
+  // are placed world-plane landmarks in front of these (LANDMARK.types
+  // 'utspring-polhem' / 'utspring-staircase', level.js), so the town reads
+  // as the distance behind the school and the stair takes over the frame.
   'lund-utspring': {
     layers: [
       { parallax: FAR, source: { type: 'color', color: '#24304a' } },
       { depth: 'far', parallaxX: FAR, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/lund-town-far.webp', tileWidth: 1774, displayHeight: 887, baselineY: 887, colorMode: 'full-color' } },
-      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/polhem-staircase-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 786, colorMode: 'full-color' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/lund-town-mid.webp', tileWidth: 1774, displayHeight: 887, baselineY: 781, colorMode: 'full-color' } },
     ],
   },
 
@@ -238,14 +251,22 @@ export const BACKGROUNDS = {
     ],
   },
 
-  // 6 -- the clinic reception. Pale teal and flat: the one bright, empty,
-  // clinical stretch in the level. Kept muted rather than white so the
-  // player and projectiles still read against it.
+  // 6 -- the clinic reception: the hospital interior strip
+  // (clinic-background-v2.png, cropped to its content columns so repeats
+  // abut: 1632x948) over a soft sky colour taken from its own windows.
+  // Drawn 5% larger than its source (1713x995) so that in the reception's
+  // zoomed-out shot one copy spans the whole 1700px arena and the side
+  // wings reach the top of the screen. baselineY is its floor edge (source
+  // row 888, scaled: 932) less 7px, which tucks the art's dark bottom
+  // outline behind the floor tiles -- left showing, it doubled up with the
+  // tiles' own top edge into a thick dark seam. tileOffset centres one copy on that shot: it is
+  // (layer-space arena centre - tileWidth / 2) mod tileWidth, where the
+  // layer-space centre is arenaCentre - (arenaCentre - 640) * (1 - MID);
+  // recompute it if the Clinic moves.
   'clinic-reception': {
     layers: [
-      { parallax: FAR, source: { type: 'color', color: '#7fa8a5' } },
-      { parallax: MID, source: { type: 'color', color: '#8fb7b3' } },
-      { parallax: NEAR, source: { type: 'silhouette', color: '#6d938f', tileWidth: 480, heights: [60, 60, 60, 0, 60, 60, 60, 0] } },
+      { parallax: FAR, source: { type: 'color', color: '#9db7cc' } },
+      { depth: 'mid', parallaxX: MID, parallaxY: 1, source: { type: 'image', path: 'assets/backgrounds/clinic-mid.webp', tileWidth: 1713, tileOffset: 489, displayHeight: 995, baselineY: 925, colorMode: 'full-color' } },
     ],
   },
 
@@ -300,10 +321,20 @@ export const LANDMARK = {
   types: {
     // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
     // background". Never abbreviated on first appearance.
-    'uf-stand': { path: 'assets/backgrounds/uf-stand.webp', colorMode: 'full-color', width: 260, height: 173, baselineY: 332, alpha: 1 },
-    // AGENTS.md §3: "the Polhem mech sleeping on the skyline".
-    'polhem-mech': { path: 'assets/backgrounds/polhem-mech.webp', colorMode: 'full-color', width: 420, height: 420, baselineY: 831, alpha: 1 },
+    // v2: the row of UF stalls with Candell UF's awards screen
+    // (uf-stand-v2.png). Delivered 1:1 (scripts/runtime-assets.py);
+    // baselineY is the row the front crates and chalkboard stand on.
+    'uf-stand': { path: 'assets/backgrounds/uf-stand.webp', colorMode: 'full-color', width: 1100, height: 345, baselineY: 338, alpha: 1 },
     stadium: { label: 'STADIUM', width: 900, height: 260, color: '#2f4a63' },
+
+    // The utspring scenery (author art, delivered 1:1 at these boxes by
+    // scripts/runtime-assets.py). The staircase's baselineY is its bottom
+    // landing's tread, so that landing is flush with the floor and the
+    // plinth under it is hidden behind the ground; level.js measures the
+    // climb and the descent off this same art. Polhemskolan stands behind
+    // it with its trees and lampposts on the floor line.
+    'utspring-staircase': { path: 'assets/backgrounds/utspring-staircase.webp', colorMode: 'full-color', width: 1599, height: 507, baselineY: 410, alpha: 1 },
+    'utspring-polhem': { path: 'assets/backgrounds/utspring-polhem.webp', colorMode: 'full-color', width: 1672, height: 350, baselineY: 346, alpha: 1 },
 
     // World props: road signs and the airport departures board (author
     // art). Signs stand on the ground: baselineY is the delivered image's
@@ -432,6 +463,10 @@ export const DEBUG = {
 export const PLAYER = {
   width: 48,
   height: 64,
+  // px above the feet that a shot's centre leaves at: the extended fist in
+  // the shooting poses (sprite sheet rows ~57-70 of 128, feet at row 120).
+  // bosses.js's claim-phase band and the enemies' shotHitboxTop follow it.
+  shotHeight: 57,
   color: '#f6c453',
   // A rim around the player, for the same reason the enemies have one
   // (HAZARD): eight background sections at wildly different brightnesses,
@@ -796,24 +831,23 @@ export const RESEARCH_GOLEM_EXIT = {
 
 // The utspring — the staircase run and the studentmössa (AGENTS.md §3,
 // PLAN.md task 3.5). A scripted five-second sequence, not a pickup you
-// walk into: approach, handover, descent, confetti, flash, title card,
-// control back. Everything below is one of its tunables.
+// walk into: handover at the foot of the staircase, auto-climb, descent,
+// confetti, flash, title card, control back. Everything below is one of
+// its tunables.
 //
-// The whole beat must stay under six seconds:
+// The beat from the top landing on:
 //   descentDuration + flashDuration + cardHoldDuration + cardFadeDuration
-//   = 3.0 + 0.25 + 1.6 + 0.4 = 5.25 s  ✓
-// If any of these are raised, check that sum again.
+//   = 3.0 + 0.25 + 1.6 + 0.4 = 5.25 s
+// plus the auto-climb before it: ~1.9 s at PLAYER.moveSpeed (the climb and
+// top landing are level.js geometry, 684 px) -- ~7.15 s in all.
 export const STAIRCASE = {
-  // --- Geometry. level.js derives the actual platform run from these:
-  // the number of steps, the height of the top landing and the approach
-  // platforms that climb to it all fall out of the numbers here, so the
-  // staircase always matches how far the auto-run actually travels.
-  // px each step sits below the one before it. This also sets how high
-  // the top landing is (steps x drop), and so how far the handover has to
-  // lift a player who arrived along the ground instead of climbing the
-  // approach platforms -- see beginUtspring in game.js. Keep it shallow:
-  // raising it makes that lift more visible.
-  stepDrop: 32,
+  // The staircase's shape is its art now (level.js STAIR_SURFACE, measured
+  // off 'utspring-staircase'); what is tunable is the timing below, and:
+  // px the walking line may drop away under a grounded player in one step
+  // and still pull their feet down onto it (game.js applyStairSurface).
+  // Covers the steepest flight at the utspring's top speed with margin;
+  // raising it a lot would let a player "stick" to the stairs on a jump.
+  surfaceSnap: 20,
 
   // --- Timings
   descentDuration: 3.0, // s of auto-run from the handover to the stop
@@ -821,9 +855,49 @@ export const STAIRCASE = {
   flashDuration: 0.25, // s of white flash; the studentmössa appears under it
   cardHoldDuration: 1.6, // s the title card holds at full opacity
   cardFadeDuration: 0.4, // s it fades out over; control returns when it's gone
+  // The ceremony music (MUSIC 'student-ceremony') starts with the handover,
+  // this many seconds into the track rather than from its beginning. The
+  // track's final chord hits ~9.0 s in, and the title card appears ~5.15 s
+  // after the handover (climb 1.9 + descent 3.0 + flash 0.25), so
+  // 9.0 - 5.15 = 3.85 puts that chord on the text. Lower = the chord comes
+  // later than the text (0 = the whole track, chord ~3.85 s after it).
+  musicStartAt: 3.85,
 
   zoomOut: 0.8, // camera scale for the whole sequence — the view widens
   flashColor: '#ffffff',
+
+  // What the Lund years were, on clouds in the sky over the descent
+  // (level.js UTSPRING_CLOUDS places them, in this order). Each drifts in
+  // once the running player is within appearLead px of it, and all of them
+  // fade out together with the title card.
+  clouds: {
+    words: ['Marketing', 'Entrepreneurship', 'Management'],
+    appearLead: 560, // px before the cloud's centre that the player's centre reveals it
+    fadeInDuration: 0.35, // s
+    riseDistance: 18, // px each cloud drifts up by while it fades in
+    // Same look as the thought bubbles (GRADUATION_ENTRANCE.thoughtBubble),
+    // bigger, and with no trailing puffs -- these belong to the sky.
+    bubble: {
+      font: 'bold 22px sans-serif',
+      lineHeight: 26,
+      maxWidth: 260,
+      paddingX: 24,
+      paddingY: 14,
+      bump: 15,
+      fill: '#1f4e6b',
+      border: '#0d1117',
+      borderWidth: 3,
+      textColor: '#f7f3e3',
+    },
+  },
+};
+
+// Jakob's thought as he passes the Gothenburg sign after the utspring
+// (level.js 'thought-trigger'). Drawn like Graduation's thought bubbles,
+// over his head, and never takes control or pauses anything.
+export const GOTHENBURG_THOUGHT = {
+  text: 'Armed with the basics, let’s continue on the business path!',
+  duration: 3.2, // s on screen
 };
 
 // Confetti for the utspring (PLAN.md task 3.5). Deliberately not a
@@ -890,6 +964,11 @@ export const PICKUP = {
   labelFont: '14px sans-serif',
   labelColor: '#f7f3e3',
   labelGapAboveBox: 6, // px between the label's baseline and the box top
+  // Pickups drawn from art instead of a labelled box. The sprite's box is
+  // also the pickup's touch box, and it stands on the ground.
+  sprites: {
+    armour: { path: 'assets/backgrounds/armour-pickup.webp', width: 80, height: 74 },
+  },
 };
 
 // Platforms (task C, AGENTS.md §5: "fixed standard dimensions for...
@@ -909,6 +988,18 @@ export const PLATFORM = {
   // every platform it means it everywhere.
   topHighlightColor: '#93b0d8',
   topHighlightHeight: 5, // px
+};
+
+// The opening tutorial's single low block. Its top is landable, and a held
+// jump clears it with room to spare before the first enemy appears.
+export const TUTORIAL = {
+  blockWidth: 88,
+  blockHeight: 72,
+  blockColor: '#1e5b7a',
+  blockEdgeColor: '#102f43',
+  blockTopColor: '#74b4cf',
+  blockEdgeWidth: 4,
+  blockTopHeight: 6,
 };
 
 // Enemy roster (AGENTS.md §3). Three behaviours total: the maths book is
@@ -937,6 +1028,12 @@ export const PLATFORM = {
 export const ENEMY_MATHBOOK = {
   width: 48,
   height: 48,
+  // px above the footprint's bottom that PLAYER shots can hit: the top of
+  // the drawn book (the lower of its two poses). Taller than `height`
+  // because shots leave at PLAYER.shotHeight, above a 48px footprint --
+  // without this a book on the ground could not be hit. Contact damage
+  // still uses the footprint.
+  shotHitboxTop: 60,
   color: '#8a5a3a', // closed cover
   telegraphColor: '#e2b23c', // opens toward this before firing
   hp: 4, // was 2
@@ -967,6 +1064,18 @@ export const ENEMY_MATHBOOK = {
   // having touched a key. idleDuration's note above claims "a player who
   // does nothing must not die there"; at 6s that simply was not true.
   projectileLifetime: 3,
+
+  // The shot's authored art: a +, a = or a -, one after the other (each
+  // book cycles through `symbols` in order, one per shot). Presentation
+  // only -- projectileWidth/Height above stay the hitbox; the symbol is
+  // drawn centred on it. The sheet is one row of square cells in
+  // `symbols` order, delivered at 2x drawCell (scripts/runtime-assets.py
+  // MATHBOOK_PROJECTILE_SHEET), so = draws about 28x20 and + about 26x26.
+  projectileSprite: {
+    path: 'assets/enemies/math-book-projectiles.webp',
+    symbols: ['plus', 'equals', 'minus'],
+    drawCell: 32, // px on screen per cell
+  },
 
   // Authored artwork (art-source/enemies/math-book). The gameplay
   // rectangle above (48x48) stays the footprint -- collision, damage and
@@ -1025,6 +1134,9 @@ export const ENEMY_INBOX = {
 export const ENEMY_HELMET = {
   width: 56,
   height: 56,
+  // Same as ENEMY_MATHBOOK.shotHitboxTop: the top of the drawn helmet
+  // (its lower, wound-up pose).
+  shotHitboxTop: 61,
   color: '#5a7a9a',
   telegraphColor: '#e2b23c', // same wind-up tell colour as every other telegraph
   recoveryColor: '#8a95a8', // dazed -- visibly different so "hit it now" reads at a glance
@@ -1037,7 +1149,6 @@ export const ENEMY_HELMET = {
   chargeSpeed: 520, // px/s
   chargeMaxDuration: 1.4, // s hard cap, in case it never reaches a bound
   recoveryDuration: 1.5, // s, dazed and damageable -- the only time it can be hurt
-  chargeRange: 900, // px total room it may charge within, centred on its spawn x
 
   // Skip starting a wind-up if the player is this close horizontally and
   // at least this far above the helmet's top -- directly overhead (e.g.
@@ -1090,7 +1201,7 @@ export const BARK = {
       '[BARK PLACEHOLDER — CV line 2, maths book kill]',
       '[BARK PLACEHOLDER — CV line 3, maths book kill]',
     ],
-    helmet: ['[BARK PLACEHOLDER — CV line, football helmet kill]'],
+    helmet: ['[BARK PLACEHOLDER — CV line, football helmet kill]', '[BARK PLACEHOLDER — CV line, second football helmet kill]'],
     // Not a kill bark: Jakob's reaction during the Research Golem's camera
     // reveal (BOSS_APPROACH, game.js updateBossApproach). Reuses the same
     // spawnBark mechanism -- floats above the player, never pauses the
@@ -1638,10 +1749,26 @@ export const RECEPTION = {
 
   // --- Intro sequence, in order. Control is taken for all three.
   thinkDuration: 2.4, // s -- Jakob stops and wonders how hard admin can be
-  frameDuration: 2.6, // s -- camera pulls out to the arena; the desk welcomes him
-  readyDuration: 1.1, // s -- platforms pop in, "Let's go!", then control returns
+  // Both lengthened once Jakob started walking in from outside during the
+  // pull-out (level.js RECEPTION_TRIGGER_X): the walk takes ~2.1 s of it.
+  frameDuration: 3.6, // s -- camera pulls out to the arena, he walks in; the desk welcomes him
+  readyDuration: 1.8, // s -- platforms pop in, "Let's go!", then control returns
   platformPopDuration: 0.35, // s -- each platform's pop-in animation
   platformPopStagger: 0.07, // s between one platform popping in and the next
+  // The reception's own platform look. The shared navy PLATFORM colours sat
+  // right in the hospital background's range (its beams and balconies)
+  // and the blocks nearly vanished into it; these give them a colour the
+  // art doesn't use, the dark rim every gameplay object carries, and a
+  // shadow that lifts them off the wall behind.
+  platformStyle: {
+    color: '#2a8c7a', // teal body
+    topColor: '#b8f5e3', // bright top edge: "stand here"
+    topHeight: 6, // px
+    outlineColor: '#0d1117',
+    outlineWidth: 3, // px
+    shadowColor: 'rgba(13, 17, 23, 0.4)',
+    shadowOffset: 8, // px down and right
+  },
 
   // --- Round 1: items appear ONE AT A TIME, in level.js order; touching the
   // current one reveals the next. Deliberately calm -- the sketch's 15 s
@@ -1744,15 +1871,33 @@ export const RECEPTION = {
     hoverAboveSurface: 22, // px gap between the surface it sits over and its bottom
     bobAmplitude: 4, // px
     bobSpeed: 3, // rad/s
-    color: '#f7f3e3',
+    // A patient file is a manila folder with a sheet sticking out of it.
+    // Cream paper alone vanished into the hospital art, which is mostly
+    // cream and pale blue-grey; the saturated folder does not.
+    folderColor: '#e9a23b',
+    folderTabHeight: 6, // px, the tab on the folder's top-left
+    paperColor: '#ffffff',
     lineColor: '#7a8699',
     outlineColor: '#0d1117',
-    glowColor: 'rgba(255, 236, 140, 0.45)',
-    glowPadding: 8, // px
+    outlineWidth: 3, // px
+    // Every item sits on a dark backing with a pulsing gold border: the
+    // backing is what separates it from a light background, the pulse is
+    // what says "grab me".
+    backingColor: 'rgba(13, 17, 23, 0.6)',
+    borderColor: '#ffd84a',
+    borderWidth: 3, // px
+    borderPulseSpeed: 5, // rad/s
+    borderMinAlpha: 0.45, // the pulse runs between this and fully opaque
+    glowPadding: 8, // px the backing extends around the item
   },
+  // width is the desk's gameplay footprint (the arena's right wall is its
+  // left edge); height is the top of the drawn desk, where the desk's
+  // speech bubble sits. The art (sprite) runs on to the right from the
+  // wall, past the arena's edge -- a long counter, left end first.
   desk: {
     width: 180,
-    height: 84,
+    height: 141,
+    sprite: { path: 'assets/backgrounds/clinic-desk.webp', width: 736, height: 141 },
     color: '#8a5a3b',
     topColor: '#b07a52',
     outlineColor: '#0d1117',
@@ -1795,12 +1940,17 @@ export const RECEPTION = {
     marginX: 28,
     marginY: 30,
     // The instruction panel in the sky, top centre.
-    hintFont: 'bold 20px sans-serif',
-    hintColor: '#f7f3e3',
-    hintFill: 'rgba(31, 78, 107, 0.85)',
+    // The instruction banner at the top. Nearly opaque and darker than it
+    // was (0.85 of a mid blue): over the Clinic's bright skylight the art
+    // showed through behind the words.
+    hintFont: 'bold 26px sans-serif',
+    hintLineHeight: 26, // px, the banner's text row -- match the font size
+    hintColor: '#ffffff',
+    hintFill: 'rgba(14, 38, 56, 0.96)',
     hintBorder: '#0d1117',
-    hintPaddingX: 18,
-    hintPaddingY: 10,
+    hintBorderWidth: 3, // px
+    hintPaddingX: 22,
+    hintPaddingY: 11,
     hintTop: 22, // px from the top of the screen
   },
   // Placeholder copy -- author-owned (AGENTS.md §10), rewrite freely.
@@ -1825,5 +1975,29 @@ export const RECEPTION = {
     round3Cleared: '...wow. You actually did it.',
     round3Failed: 'Good try! A hectic front desk is not for everyone ;) (It is possible.)',
     roundSkipped: 'Fair enough. Moving on!',
+  },
+};
+
+// Background music (music.js). One track plays at a time; a change
+// crossfades -- the old track fades out over fadeOutDuration (or the new
+// track's fadeOutPrevious, when it sets one) while the new one fades in
+// over its own fadeIn. Which track plays where is level data
+// (level.js 'background-section' entries carry `music`) plus the two boss
+// fights (game.js currentMusic). Files come from scripts/encode-music.py,
+// already loudness-matched, so one volume serves every track.
+export const MUSIC = {
+  volume: 0.7, // 0..1, the level every track plays at
+  fadeOutDuration: 1.2, // s for the outgoing track to fade to silence
+  tracks: {
+    // loop: false = a one-off cue (music.js playMusicCue) that plays once
+    // over whatever was playing, which resumes when the cue ends.
+    exploration: { path: 'assets/audio/exploration.mp3', loop: true, fadeIn: 1.5 },
+    'student-ceremony': { path: 'assets/audio/student-ceremony.mp3', loop: false, fadeIn: 0 },
+    'research-golem': { path: 'assets/audio/research-golem.mp3', loop: true, fadeIn: 0.3 },
+    // A long, overlapping crossfade: exploration and the Clinic track are
+    // very different, and a quick change between them sounded abrupt.
+    clinic: { path: 'assets/audio/clinic.mp3', loop: true, fadeIn: 2.5, fadeOutPrevious: 2.5 },
+    usa: { path: 'assets/audio/usa.mp3', loop: true, fadeIn: 0.8 },
+    graduation: { path: 'assets/audio/graduation.mp3', loop: true, fadeIn: 0.3 },
   },
 };

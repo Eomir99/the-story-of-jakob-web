@@ -1,10 +1,10 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, ENEMY_MATHBOOK } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { getImage } from './assets.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
-import { createMathbookEnemy, createInboxEnemy, createFootballHelmetEnemy, updateEnemy, activateEnemy, damageEnemy, contactDamageFor, drawEnemy } from './enemies.js';
+import { createMathbookEnemy, createInboxEnemy, createFootballHelmetEnemy, updateEnemy, activateEnemy, damageEnemy, contactDamageFor, drawEnemy, shotHitbox } from './enemies.js';
 import {
   createResearchGolem,
   activateResearchGolem,
@@ -26,7 +26,7 @@ import {
   clearGraduationHazards,
   graduationSlabHitsPlayer,
 } from './bosses.js';
-import { LEVEL, LEVEL_BOUNDS, DEBUG_START_X, entryY } from './level.js';
+import { LEVEL, LEVEL_BOUNDS, TUTORIAL_END_X, DEBUG_START_X, entryY } from './level.js';
 import {
   createReception,
   skipReception,
@@ -38,6 +38,7 @@ import {
   drawReceptionSpeech,
   drawReceptionHud,
 } from './reception.js';
+import { updateMusic, playMusicCue } from './music.js';
 
 const FIXED_DT = 1 / TIMESTEP.hz;
 
@@ -58,6 +59,7 @@ export function subscribeToStateChange(listener) {
 
 function setGameState(next) {
   gameState = next;
+  setTutorialVisible(Boolean(next === STATE.PLAYING && player && player.x < TUTORIAL_END_X));
   if (stateChangeListener) stateChangeListener(gameState, { comicId: activeComicId });
 }
 
@@ -74,6 +76,20 @@ export function subscribeToTitleCard(listener) {
 
 function setTitleCard(visible, opacity) {
   if (titleCardListener) titleCardListener(visible, opacity);
+}
+
+// The three opening control hints are DOM text over gameplay. The game owns
+// their visibility; ui.js owns the element, like the other DOM overlays.
+let tutorialVisibilityListener = null;
+let tutorialVisible = false;
+export function subscribeToTutorialVisibility(listener) {
+  tutorialVisibilityListener = listener;
+}
+
+function setTutorialVisible(visible) {
+  if (visible === tutorialVisible) return;
+  tutorialVisible = visible;
+  if (tutorialVisibilityListener) tutorialVisibilityListener(visible);
 }
 
 // The focus/visibility hint (task 3.10) is UI copy, so it is DOM and not
@@ -106,6 +122,8 @@ let boss;
 let graduationBoss;
 let pickups;
 let platforms; // task C: { x, y, width, height }, one-way landable rectangles
+let tutorialBlock; // the single solid jump block in the opening
+let stairSurface; // [[x, y], ...] the utspring staircase's walking line (level.js 'stair-surface'), or null
 let checkpoints; // sorted ascending by x
 let nextCheckpointIndex;
 let backgroundSections; // sorted ascending: [{ name, xStart, xEnd, background }]
@@ -116,7 +134,11 @@ let landmarks; // [{ landmark, x, parallax }], drawn behind everything
 let levelElapsed = 0;
 let sectionElapsed = 0;
 let timedSectionIndex = -1;
-let utspringTrigger; // { x, markY } that hands control to the utspring, or null
+let utspringTrigger; // { x, descentX, markY } -- hands control to the utspring at x, or null
+let utspringClouds; // [{ x, y, text, shownFor }] -- level.js 'utspring-cloud'
+let thoughtTriggers; // sorted ascending by x: [{ x, text }] -- level.js 'thought-trigger'
+let nextThoughtTriggerIndex;
+let activeThought = null; // { text, timeLeft } while one is over Jakob's head
 let comicTriggers; // sorted ascending by x: [{ x, comicId, next }]
 let nextComicTriggerIndex;
 // Task B: the currently-closed arena wall, and the boss that owns it.
@@ -175,6 +197,7 @@ let lastTime = 0;
 let gameState = STATE.TITLE;
 let activeComicId = null;
 let pendingComicNext = null; // STATE to enter once the active comic advances
+let queuedComicIds = []; // comics still to show after the active one, before pendingComicNext
 
 export function startGame(canvas) {
   canvas.width = CANVAS.width;
@@ -241,6 +264,7 @@ function applyDebugStart() {
   while (bossApproaches[nextBossApproachIndex] && bossApproaches[nextBossApproachIndex].x < startX) nextBossApproachIndex += 1;
   while (comicTriggers[nextComicTriggerIndex] && comicTriggers[nextComicTriggerIndex].x < startX) nextComicTriggerIndex += 1;
   while (checkpoints[nextCheckpointIndex] && checkpoints[nextCheckpointIndex].x < startX) nextCheckpointIndex += 1;
+  while (thoughtTriggers[nextThoughtTriggerIndex] && thoughtTriggers[nextThoughtTriggerIndex].x < startX) nextThoughtTriggerIndex += 1;
   for (const enemy of enemies) if (enemy.x < startX) enemy.alive = false;
   for (const bossEntity of [boss, graduationBoss]) if (bossEntity && bossEntity.activationX < startX) bossEntity.alive = false;
   if (researchGolemExitX !== null && researchGolemExitX < startX) {
@@ -250,7 +274,7 @@ function applyDebugStart() {
   for (const pickup of pickups) {
     if (pickup.x < startX) {
       pickup.collected = true;
-      applyPickup(player, pickup.outfit);
+      if (!pickup.comics) applyPickup(player, pickup.outfit);
     }
   }
   if (utspringPhase === UTSPRING.DONE && player.outfit === 'none') applyPickup(player, 'studentmossa');
@@ -274,12 +298,22 @@ export function advanceFromComic() {
   // has to be off again before PLAYING resumes below.
   setInputSuppressed(false);
   resetInput();
+  // A chain of comics (the armour pickup's): straight on to the next
+  // one, no gameplay between.
+  if (queuedComicIds.length > 0) {
+    activeComicId = queuedComicIds.shift();
+    setGameState(STATE.COMIC);
+    return;
+  }
   setGameState(pendingComicNext);
   activeComicId = null;
   pendingComicNext = null;
 }
 
-function enterComic(comicId, next) {
+// comicIds: one id, or an array played back to back before `next`.
+function enterComic(comicIds, next) {
+  const [comicId, ...rest] = [].concat(comicIds);
+  queuedComicIds = rest;
   // Task 3, playtest round 2: clears whatever gameplay input was held or
   // buffered the instant a comic opens (e.g. left mouse still down from
   // firing when a boss-room trigger fires), so nothing carried over from
@@ -306,16 +340,19 @@ function enterComic(comicId, next) {
 // scripted beat is ever needed, that is when to generalise, not now.
 //
 // The beat, in order:
-//   DESCENT  input handed over, auto-run down the staircase with the
+//   CLIMB    input handed over at the foot of the staircase; auto-walk up
+//            the climb and across the top landing, camera widened; the
+//            ceremony music starts
+//   DESCENT  auto-run down the staircase with the
 //            speed ramping up, camera widened, confetti falling
 //   FLASH    the player stops; a brief white flash; the studentmössa
 //            appears on the sprite underneath it
 //   CARD     the DOM title card holds, then fades
 //   DONE     control returns, and this can never run again
 //
-// Total length is the sum of the four timings in config.js: 5.25s, and
-// it must stay under six.
-const UTSPRING = { IDLE: 'idle', DESCENT: 'descent', FLASH: 'flash', CARD: 'card', DONE: 'done' };
+// From the top landing on it is the sum of the four timings in config.js,
+// 5.25 s; the climb before it adds ~1.9 s.
+const UTSPRING = { IDLE: 'idle', CLIMB: 'climb', DESCENT: 'descent', FLASH: 'flash', CARD: 'card', DONE: 'done' };
 let utspringPhase = UTSPRING.IDLE;
 let utspringTimer = 0;
 // s since the utspring ended (DONE). Drives landmarks placed with
@@ -346,11 +383,21 @@ function updateUtspring(dt) {
 
   utspringTimer += dt;
   updateConfetti(dt);
+  updateUtspringClouds(dt);
+
+  if (utspringPhase === UTSPRING.CLIMB) {
+    // Walks up the climb at normal speed (applyStairSurface keeps his feet
+    // on it) and across the top landing, until he reaches the descent line.
+    if (player.x < utspringTrigger.descentX) return;
+    beginDescent();
+    return;
+  }
 
   if (utspringPhase === UTSPRING.DESCENT) {
     // Speed increases gradually over the descent, ending above normal run
-    // speed. Linear, and the staircase in level.js is sized from exactly
-    // this ramp, so the player arrives at the bottom as the timer expires.
+    // speed. Linear, and level.js places the stop (UTSPRING_END_X) from
+    // exactly this ramp: down the staircase and on across the floor to
+    // Polhemskolan as the timer expires.
     const t = Math.min(1, utspringTimer / STAIRCASE.descentDuration);
     player.autoRun = PLAYER.moveSpeed * (1 + (STAIRCASE.speedRampMultiplier - 1) * t);
     if (utspringTimer >= STAIRCASE.descentDuration) {
@@ -377,27 +424,115 @@ function updateUtspring(dt) {
 }
 
 function beginUtspring() {
-  enterUtspringPhase(UTSPRING.DESCENT);
-  // Stand the player on their mark: the top of the first step. The
-  // staircase descends from a raised landing, and the ground beneath it
-  // is flat and open with no wall, so a player who simply held right
-  // arrives under the stairs rather than on them -- and would otherwise
-  // run the whole beat along level ground, never touching the staircase.
-  // This is the one instant where placing the character is legitimate:
-  // the sequence has just taken control and the player has none. Anyone
-  // who climbed the approach platforms is already at this height, so it
-  // is a no-op for them.
-  player.y = utspringTrigger.markY - player.height;
-  player.vy = 0;
-  player.onGround = true;
+  enterUtspringPhase(UTSPRING.CLIMB);
   // Input is ignored for the whole sequence, fire included, and
   // setInputSuppressed drops every held and pressed key on the way in and
-  // on the way out -- so nothing the player mashed during these five
-  // seconds fires when control comes back.
+  // on the way out -- so nothing the player mashed during these seconds
+  // fires when control comes back.
   setInputSuppressed(true);
   player.invincible = true;
   player.autoRun = PLAYER.moveSpeed;
+  // Started partway in, so the track's final chord lands on the title card
+  // (config.js STAIRCASE.musicStartAt); exploration comes back after it.
+  playMusicCue('student-ceremony', STAIRCASE.musicStartAt);
+}
+
+// The climb is done: Jakob is on the top landing, at the descent line.
+function beginDescent() {
+  enterUtspringPhase(UTSPRING.DESCENT);
+  // Stand the player on their mark, the top landing. The climb keeps his
+  // feet on the staircase, so this is normally a no-op; it only guards
+  // against arriving mid-air (a jump already under way at the handover).
+  player.y = utspringTrigger.markY - player.height;
+  player.vy = 0;
+  player.onGround = true;
   spawnConfetti();
+}
+
+// The utspring staircase is ground the player walks on, up and down
+// (level.js STAIR_SURFACE): within its span, the floor under the player's
+// centre is that line instead of WORLD.groundY. Called straight after
+// updatePlayer. Nobody can be below it -- it is stone -- so feet that
+// ended the step under it are lifted onto it (walking up, or landing from
+// a jump). A player who was standing on the ground last step and is not
+// jumping is also pulled down onto it when it drops away by no more than
+// STAIRCASE.surfaceSnap, so walking or auto-running down a flight stays
+// planted instead of hopping off every step. The utspring's descent is
+// exactly that: the ordinary auto-run over this same line.
+function applyStairSurface(wasGrounded) {
+  if (!stairSurface || player.dead) return;
+  const surfaceY = stairSurfaceYAt(player.x + player.width / 2);
+  if (surfaceY === null) return;
+  const feet = player.y + player.height;
+  const inside = feet > surfaceY;
+  const stepDown = wasGrounded && player.vy >= 0 && surfaceY - feet <= STAIRCASE.surfaceSnap;
+  if (!inside && !stepDown) return;
+  player.y = surfaceY - player.height;
+  if (player.vy >= 0) {
+    player.vy = 0;
+    player.onGround = true;
+  }
+}
+
+function stairSurfaceYAt(x) {
+  const last = stairSurface.length - 1;
+  if (x < stairSurface[0][0] || x > stairSurface[last][0]) return null;
+  let i = 1;
+  while (stairSurface[i][0] < x) i += 1;
+  const [x0, y0] = stairSurface[i - 1];
+  const [x1, y1] = stairSurface[i];
+  return y0 + ((y1 - y0) * (x - x0)) / (x1 - x0);
+}
+
+// Each cloud is revealed once the running player's centre comes within
+// appearLead of it, then fades in over fadeInDuration.
+function updateUtspringClouds(dt) {
+  const feetX = player.x + player.width / 2;
+  for (const cloud of utspringClouds) {
+    if (cloud.shownFor > 0 || feetX >= cloud.x - STAIRCASE.clouds.appearLead) cloud.shownFor += dt;
+  }
+}
+
+// World space, drawn behind the player: they are sky. They fade out with
+// the title card and are gone once control returns.
+function drawUtspringClouds(ctx) {
+  if (!isUtspringRunning()) return;
+  const spec = STAIRCASE.clouds;
+  let fadeOut = 1;
+  if (utspringPhase === UTSPRING.CARD) {
+    fadeOut = Math.max(0, 1 - Math.max(0, utspringTimer - STAIRCASE.cardHoldDuration) / STAIRCASE.cardFadeDuration);
+  }
+  for (const cloud of utspringClouds) {
+    if (cloud.shownFor <= 0) continue;
+    const fadeIn = Math.min(1, cloud.shownFor / spec.fadeInDuration);
+    ctx.save();
+    ctx.globalAlpha = fadeIn * fadeOut;
+    ctx.font = spec.bubble.font;
+    const height = wrapThoughtText(ctx, cloud.text, spec.bubble.maxWidth).length * spec.bubble.lineHeight + spec.bubble.paddingY * 2;
+    const bottom = cloud.y + height / 2 + spec.riseDistance * (1 - fadeIn);
+    drawCloud(ctx, cloud.text, cloud.x, bottom, spec.bubble, null);
+    ctx.restore();
+  }
+}
+
+// Jakob's passing thought (level.js 'thought-trigger', at the Gothenburg
+// sign): shown over his head for GOTHENBURG_THOUGHT.duration. Nothing
+// pauses and control is never taken -- like a bark.
+function updateThoughtTriggers(dt) {
+  if (activeThought) {
+    activeThought.timeLeft -= dt;
+    if (activeThought.timeLeft <= 0) activeThought = null;
+  }
+  const next = thoughtTriggers[nextThoughtTriggerIndex];
+  if (next && !player.dead && player.x + player.width / 2 >= next.x) {
+    activeThought = { text: next.text, timeLeft: GOTHENBURG_THOUGHT.duration };
+    nextThoughtTriggerIndex += 1;
+  }
+}
+
+function drawActiveThought(ctx) {
+  if (!activeThought || player.dead) return;
+  drawThoughtBubble(ctx, activeThought.text, player.x + player.width / 2, player.y);
 }
 
 function enterUtspringPhase(next) {
@@ -527,20 +662,25 @@ function drawApproachThought(ctx) {
   drawThoughtBubble(ctx, activeApproach.thoughts[index], player.x + player.width / 2, player.y);
 }
 
-// A cloud: a rounded body ringed with scallops, and two small puffs
-// trailing down to Jakob's head. Every circle is stroked first and filled
-// second, so the fills cover the inner halves of the outlines and only the
-// cloud's outer edge is left drawn.
+// A thought over Jakob's head: a cloud (drawCloud) with its trailing
+// puffs pointing down at him.
 function drawThoughtBubble(ctx, text, headX, headTopY) {
   const spec = GRADUATION_ENTRANCE.thoughtBubble;
+  drawCloud(ctx, text, headX + spec.offsetX, headTopY - spec.gapAboveHead, spec, headX);
+}
+
+// A cloud: a rounded body ringed with scallops, and -- when tailX is given
+// -- two small puffs trailing down toward that x. Every circle is stroked
+// first and filled second, so the fills cover the inner halves of the
+// outlines and only the cloud's outer edge is left drawn.
+function drawCloud(ctx, text, centerX, bottom, spec, tailX) {
   ctx.save();
   ctx.font = spec.font;
   const lines = wrapThoughtText(ctx, text, spec.maxWidth);
   const textWidth = Math.max(...lines.map((line) => ctx.measureText(line).width));
   const width = textWidth + spec.paddingX * 2;
   const height = lines.length * spec.lineHeight + spec.paddingY * 2;
-  const bottom = headTopY - spec.gapAboveHead;
-  const left = headX + spec.offsetX - width / 2;
+  const left = centerX - width / 2;
   const top = bottom - height;
 
   const circles = [];
@@ -556,8 +696,10 @@ function drawThoughtBubble(ctx, text, headX, headTopY) {
     circles.push([left, y, r], [left + width, y, r]);
   }
   // The trailing puffs, from the cloud down toward the head.
-  circles.push([headX + spec.offsetX * 0.35, bottom + r * 1.5, r * 0.55]);
-  circles.push([headX + spec.offsetX * 0.1, bottom + r * 2.9, r * 0.35]);
+  if (tailX !== null) {
+    circles.push([tailX + (centerX - tailX) * 0.35, bottom + r * 1.5, r * 0.55]);
+    circles.push([tailX + (centerX - tailX) * 0.1, bottom + r * 2.9, r * 0.35]);
+  }
 
   ctx.lineWidth = spec.borderWidth * 2; // half of it ends up hidden under the fill
   ctx.strokeStyle = spec.border;
@@ -752,7 +894,11 @@ function loadLevel() {
   graduationBoss = null;
   pickups = [];
   platforms = [];
+  tutorialBlock = null;
+  stairSurface = null;
   utspringTrigger = null;
+  utspringClouds = [];
+  activeThought = null;
   deathBursts = [];
   shakeTimer = 0;
   shakeAmplitude = 0;
@@ -762,6 +908,7 @@ function loadLevel() {
   const sections = [];
   const triggers = [];
   const approaches = [];
+  const thoughtEntries = [];
   landmarks = [];
   levelElapsed = 0;
   sectionElapsed = 0;
@@ -786,7 +933,7 @@ function loadLevel() {
     } else if (entry.type === 'enemy-inbox') {
       enemies.push(createInboxEnemy(entry.x, y));
     } else if (entry.type === 'enemy-helmet') {
-      enemies.push(createFootballHelmetEnemy(entry.x, y));
+      enemies.push(createFootballHelmetEnemy(entry.x, y, { minX: entry.minX, maxX: entry.maxX }));
     } else if (entry.type === 'boss-research-golem') {
       boss = createResearchGolem(entry.x, y, entry.activationX);
       researchGolemExitX = entry.exitX ?? null;
@@ -794,19 +941,37 @@ function loadLevel() {
     } else if (entry.type === 'boss-graduation') {
       graduationBoss = createGraduationBoss(entry.x, y, entry.activationX);
       graduationArenaFrame = entry.arenaFrame ?? null;
+    } else if (entry.type === 'tutorial-block') {
+      tutorialBlock = { x: entry.x, y, width: TUTORIAL.blockWidth, height: TUTORIAL.blockHeight };
+    } else if (entry.type === 'stair-surface') {
+      stairSurface = entry.points;
     } else if (entry.type === 'platform') {
-      platforms.push({ x: entry.x, y, width: PLATFORM.width, height: PLATFORM.height, walkway: entry.walkway === true });
+      platforms.push({ x: entry.x, y, width: PLATFORM.width, height: PLATFORM.height });
     } else if (entry.type === 'pickup') {
-      pickups.push({ x: entry.x, y, width: PICKUP.width, height: PICKUP.height, outfit: entry.outfit, collected: false });
+      const sprite = PICKUP.sprites[entry.outfit];
+      pickups.push({
+        x: entry.x,
+        y,
+        width: sprite ? sprite.width : PICKUP.width,
+        height: sprite ? sprite.height : PICKUP.height,
+        outfit: entry.outfit,
+        comics: entry.comics ?? null, // set: touching opens these comics instead of changing outfit
+        next: entry.next ?? null,
+        collected: false,
+      });
       checkpointXs.push(entry.x); // AGENTS.md §6: invisible checkpoints at each pickup
     } else if (entry.type === 'checkpoint') {
       checkpointXs.push(entry.x);
     } else if (entry.type === 'background-section') {
-      sections.push({ name: entry.name, xStart: entry.xStart, xEnd: entry.xEnd, background: entry.background });
+      sections.push({ name: entry.name, xStart: entry.xStart, xEnd: entry.xEnd, background: entry.background, music: entry.music, ground: entry.ground });
     } else if (entry.type === 'landmark') {
       landmarks.push({ landmark: entry.landmark, x: entry.x, parallax: entry.parallax, showAfterUtspring: entry.showAfterUtspring ?? false });
     } else if (entry.type === 'utspring-trigger') {
-      utspringTrigger = { x: entry.x, markY: y };
+      utspringTrigger = { x: entry.x, descentX: entry.descentX, markY: y };
+    } else if (entry.type === 'utspring-cloud') {
+      utspringClouds.push({ x: entry.x, y, text: entry.text, shownFor: 0 });
+    } else if (entry.type === 'thought-trigger') {
+      thoughtEntries.push({ x: entry.x, text: entry.text });
     } else if (entry.type === 'comic-trigger') {
       triggers.push({ x: entry.x, comicId: entry.comicId, next: entry.next });
     } else if (entry.type === 'reception-encounter') {
@@ -841,12 +1006,15 @@ function loadLevel() {
   approaches.sort((a, b) => a.x - b.x);
   bossApproaches = approaches;
   nextBossApproachIndex = 0;
+
+  thoughtEntries.sort((a, b) => a.x - b.x);
+  thoughtTriggers = thoughtEntries;
+  nextThoughtTriggerIndex = 0;
 }
 
 // Focus/visibility handling (task 3.10): true whenever the tab is hidden
 // (switched away, minimized) or the window itself isn't focused (alt-tabbed
-// to another app). No audio module exists yet to pause alongside this
-// (Milestone 7) -- when one lands, it hooks into the same check.
+// to another app). The music pauses on the same check (updateMusic).
 let wasUnfocused = false;
 
 function isUnfocused() {
@@ -855,6 +1023,7 @@ function isUnfocused() {
 
 function loop(now) {
   const unfocused = isUnfocused();
+  updateMusic(currentMusic(), unfocused);
   // Only during gameplay: the title and comic screens are DOM screens
   // stacked over the canvas and have no simulation to freeze, so there is
   // nothing there for a "click to resume" to be about.
@@ -910,6 +1079,26 @@ function loop(now) {
   requestAnimationFrame(loop);
 }
 
+// Which music track should be playing (music.js). Each background section
+// names its track in level.js; the two boss fights override that while
+// they are running -- the Research Golem only until it falls (exploration
+// is back for the walk out), Graduation from its first attack to the end
+// of the game. Neither a comic nor a scripted boss approach changes the
+// music: both keep whatever was playing when they began. The approach
+// matters because its walk can wake the boss a step before the comic
+// opens -- the hold keeps exploration under the approach and its comic, so
+// the boss music starts with the fight itself.
+let gameplayMusic = null;
+function currentMusic() {
+  if (gameState === STATE.TITLE) return null;
+  if ((gameState === STATE.COMIC || approachPhase !== null) && gameplayMusic !== null) return gameplayMusic;
+  if (gameState === STATE.APPLICATION) return gameplayMusic;
+  if (boss && boss.active && boss.alive) gameplayMusic = 'research-golem';
+  else if (graduationBoss && graduationBoss.active) gameplayMusic = 'graduation';
+  else gameplayMusic = backgroundSections[sectionIndexAt(player.x)].music ?? null;
+  return gameplayMusic;
+}
+
 function step(dt) {
   // Hitstop consumes whole simulation steps. Nothing below runs, so the
   // frame the shot landed on is what stays on screen for the freeze --
@@ -926,7 +1115,14 @@ function step(dt) {
   updateResearchGolemExitWalk(dt);
   updateReception(reception, dt, player);
   const extraPlatforms = receptionPlatforms(reception);
-  const spawned = updatePlayer(player, dt, spawnPoint, extraPlatforms ? platforms.concat(extraPlatforms) : platforms);
+  const walkablePlatforms = tutorialBlock ? platforms.concat(tutorialBlock) : platforms;
+  const previousPlayerX = player.x;
+  const wasGrounded = player.onGround;
+  const spawned = updatePlayer(player, dt, spawnPoint, extraPlatforms ? walkablePlatforms.concat(extraPlatforms) : walkablePlatforms);
+  applyTutorialBlock(previousPlayerX);
+  applyStairSurface(wasGrounded);
+  updateThoughtTriggers(dt);
+  setTutorialVisible(player.x < TUTORIAL_END_X);
   if (spawned.length > 0) projectiles.push(...spawned);
   checkBossActivation();
   checkEnemyActivation();
@@ -966,6 +1162,10 @@ function resolvePickups() {
     if (pickup.collected) continue;
     if (aabbOverlap(player, pickup)) {
       pickup.collected = true;
+      if (pickup.comics) {
+        enterComic(pickup.comics, pickup.next === 'application' ? STATE.APPLICATION : STATE.PLAYING);
+        return;
+      }
       applyPickup(player, pickup.outfit);
     }
   }
@@ -1000,6 +1200,17 @@ function handleDeathTransition() {
 // Bosses stand still and are solid walls (solidWall in their config): the
 // player can't walk behind either one, so both fights always happen with
 // the player facing right, by design.
+function applyTutorialBlock(previousPlayerX) {
+  if (!tutorialBlock || player.dead || !aabbOverlap(player, tutorialBlock)) return;
+  // The top is already handled as a one-way platform in updatePlayer. Only
+  // stop a side crossing while the player's feet are below that top.
+  if (previousPlayerX + player.width <= tutorialBlock.x && player.vx > 0) {
+    player.x = tutorialBlock.x - player.width;
+  } else if (previousPlayerX >= tutorialBlock.x + tutorialBlock.width && player.vx < 0) {
+    player.x = tutorialBlock.x + tutorialBlock.width;
+  }
+}
+
 function applySolidWalls() {
   clampBehindSolidBoss(boss, RESEARCH_GOLEM);
   clampBehindSolidBoss(graduationBoss, GRADUATION);
@@ -1176,7 +1387,7 @@ function resolveProjectileHits() {
     // Player-owned: vs enemies, then vs whichever boss is alive.
     for (const enemy of enemies) {
       if (!enemy.alive) continue;
-      if (aabbOverlap(projectile, enemy)) {
+      if (aabbOverlap(projectile, shotHitbox(enemy))) {
         // hp before/after is what separates a shot that did damage from
         // one that was merely absorbed -- the Endless Inbox can't be shot
         // down at all, and the football helmet is invulnerable outside
@@ -1433,6 +1644,27 @@ function drawGround(ctx) {
     // player walks on (the Graduation balustrade's capstones).
     ctx.drawImage(image, tileX, WORLD.groundY - (texture.raise ?? 0), texture.tileWidth, texture.tileHeight);
   }
+
+  // A section with its own floor (level.js `ground`: the Clinic) covers
+  // the one above across exactly its own x range, tiled from its start.
+  for (const section of backgroundSections) {
+    if (!section.ground || section.xEnd < left || section.xStart > right) continue;
+    const floor = WORLD[section.ground];
+    const floorImage = getImage(floor.path);
+    if (!floorImage) continue;
+    const from = Math.max(left, section.xStart);
+    const to = Math.min(right, section.xEnd);
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(from, WORLD.groundY, to - from, WORLD.groundDepth);
+    ctx.clip();
+    ctx.fillStyle = WORLD.groundColor;
+    ctx.fillRect(from, WORLD.groundY, to - from, WORLD.groundDepth);
+    for (let tileX = section.xStart + Math.floor((from - section.xStart) / floor.tileWidth) * floor.tileWidth; tileX < to; tileX += floor.tileWidth) {
+      ctx.drawImage(floorImage, tileX, WORLD.groundY, floor.tileWidth, floor.tileHeight);
+    }
+    ctx.restore();
+  }
 }
 
 function visibleWorldRect() {
@@ -1629,7 +1861,6 @@ function drawImageTile(ctx, source, left, right, tileOriginX = 0) {
   const image = resolveBackgroundImage(source);
   if (!image) return; // not loaded (or failed) yet -- draw nothing this frame, not an error
   const { tileWidth, displayHeight, baselineY, openingPath, tileOffset } = source;
-  // Continuous scenery: only landmarks consult local walkway heights.
   const drawY = WORLD.groundY - baselineY;
 
   // A layer without an opening tile keeps the world-anchored parity it has
@@ -1721,24 +1952,14 @@ function tintImage(image, color) {
 // not. Tiled layers repeat forever, so where their offset lands does not
 // matter and `x - camera.x * parallax` is fine for them. Applying that
 // same formula to a single placed object puts it at its stated x only
-// when camera.x * parallax happens to land there: the Polhem mech, at
-// x 6200 and parallax 0.25, would not have come into view until the
-// camera reached x 24800, most of a level later. It was never on screen.
+// when camera.x * parallax happens to land there: a landmark at x 6200
+// with parallax 0.25 would not appear until the camera reached x 24800,
+// most of a level later.
 //
 // So each landmark has a home -- the camera position that centres it --
 // and drifts from there at its own rate. Place one at an x and that is
 // where you meet it, whatever its parallax; parallax then only decides
 // how fast it slides past once you are there.
-function walkwayTopAt(x) {
-  let top = WORLD.groundY;
-  for (const platform of platforms) {
-    if (platform.walkway && x >= platform.x && x < platform.x + platform.width) {
-      top = Math.min(top, platform.y);
-    }
-  }
-  return top;
-}
-
 // Research Golem venue repair task: the whole "never visible at the same
 // time" rule (task brief) in one derived boolean, computed fresh from
 // player.x every call rather than a flag toggled at trigger points -- it
@@ -1790,7 +2011,7 @@ function drawLandmarks(ctx) {
     if (drawX + spec.width < view.left || drawX > view.left + view.width) continue;
 
     const image = spec.path ? resolveBackgroundImage(spec) : null;
-    const groundY = placement.parallax === 1 ? walkwayTopAt(placement.x + spec.width / 2) : WORLD.groundY;
+    const groundY = WORLD.groundY;
     const footOffset = image && spec.baselineY !== undefined
       ? spec.baselineY * spec.height / image.height : spec.height;
     const top = groundY - footOffset;
@@ -1834,15 +2055,18 @@ function render() {
 
   drawBackground(ctx);
   drawLandmarks(ctx);
+  drawUtspringClouds(ctx);
 
   drawGround(ctx);
 
   drawPlatforms(ctx);
+  drawTutorialBlock(ctx);
   drawGraduationFloorWarnings(ctx, graduationBoss);
   drawReceptionScenery(ctx, reception);
   drawPickups(ctx);
   drawPlayer(ctx, player);
   drawApproachThought(ctx);
+  drawActiveThought(ctx);
   drawReceptionSpeech(ctx, reception, player, camera.zoom, visibleWorldRect());
   for (const enemy of enemies) drawEnemy(ctx, enemy);
   drawResearchGolem(ctx, boss);
@@ -1929,6 +2153,18 @@ function drawPlayerHud(ctx) {
   }
 }
 
+function drawTutorialBlock(ctx) {
+  if (!tutorialBlock) return;
+  const { x, y, width, height } = tutorialBlock;
+  ctx.fillStyle = TUTORIAL.blockColor;
+  ctx.fillRect(x, y, width, height);
+  ctx.strokeStyle = TUTORIAL.blockEdgeColor;
+  ctx.lineWidth = TUTORIAL.blockEdgeWidth;
+  ctx.strokeRect(x, y, width, height);
+  ctx.fillStyle = TUTORIAL.blockTopColor;
+  ctx.fillRect(x, y, width, TUTORIAL.blockTopHeight);
+}
+
 function drawPlatforms(ctx) {
   for (const platform of platforms) {
     const x = Math.round(platform.x);
@@ -1945,6 +2181,12 @@ function drawPlatforms(ctx) {
 function drawPickups(ctx) {
   for (const pickup of pickups) {
     if (pickup.collected) continue;
+    const sprite = PICKUP.sprites[pickup.outfit];
+    const image = sprite && getImage(sprite.path);
+    if (sprite) {
+      if (image) ctx.drawImage(image, Math.round(pickup.x), Math.round(pickup.y), pickup.width, pickup.height);
+      continue;
+    }
     ctx.fillStyle = PICKUP.colors[pickup.outfit];
     ctx.fillRect(Math.round(pickup.x), Math.round(pickup.y), pickup.width, pickup.height);
 
@@ -2002,6 +2244,21 @@ function drawBossProjectileSprite(ctx, projectile, x, y) {
   return true;
 }
 
+// The maths book's shot: its +, = or - (enemies.js fireMathbookProjectile),
+// centred on the hitbox. Falls back to the plain rectangle until the sheet
+// has loaded.
+function drawMathbookProjectile(ctx, projectile) {
+  if (projectile.mathbookSymbol === undefined) return false;
+  const spec = ENEMY_MATHBOOK.projectileSprite;
+  const image = getImage(spec.path);
+  if (!image) return false;
+  const cell = image.height; // square cells, one row
+  const x = projectile.x + projectile.width / 2 - spec.drawCell / 2;
+  const y = projectile.y + projectile.height / 2 - spec.drawCell / 2;
+  ctx.drawImage(image, projectile.mathbookSymbol * cell, 0, cell, cell, x, y, spec.drawCell, spec.drawCell);
+  return true;
+}
+
 function drawProjectiles(ctx) {
   for (const projectile of projectiles) {
     const x = Math.round(projectile.x);
@@ -2018,6 +2275,7 @@ function drawProjectiles(ctx) {
     }
 
     if (drawBossProjectileSprite(ctx, projectile, x, y)) continue;
+    if (drawMathbookProjectile(ctx, projectile)) continue;
     if (drawGraduationProjectile(ctx, projectile, x, y)) continue;
 
     ctx.fillStyle = projectile.color || PROJECTILE.color;

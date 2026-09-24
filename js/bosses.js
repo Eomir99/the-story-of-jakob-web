@@ -768,7 +768,7 @@ function shuffled(entries) {
 // highest up); `bottom` is the largest y (standing).
 function computeReachableShotYBand() {
   const apexHeight = (PLAYER.jumpVelocity * PLAYER.jumpVelocity) / (2 * WORLD.gravity);
-  const shotOffset = PLAYER.height / 2 - PROJECTILE.height / 2;
+  const shotOffset = PLAYER.height - PLAYER.shotHeight - PROJECTILE.height / 2;
   const bottom = WORLD.groundY - PLAYER.height + shotOffset; // standing
   const top = WORLD.groundY - PLAYER.height - apexHeight + shotOffset; // jump apex
   return { top, bottom };

@@ -30,7 +30,7 @@
 // together, then a quiet stretch, then one on a platform) rather than
 // landing on a steady rhythm, which would read as filler.
 
-import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, LANDMARK, PICKUP, PLATFORM, STAIRCASE, BOSS_APPROACH } from './config.js';
+import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
 
 const SPAWN_X = 120;
 
@@ -52,9 +52,8 @@ const platformTop = (clearance) => WORLD.groundY - clearance;
 // ground books added to fill the space. The maths book (the
 // enemy-behaviours brief): one behaviour, placed five times so it plays
 // differently each time despite identical logic --
-//   1  MATHBOOK_1_X             alone, flat ground, nothing else on screen.
-//                               The game's shooting tutorial; this
-//                               encounter cannot be lost.
+//   1  MATHBOOK_1_X             after a safe movement/jump stretch. This is
+//                               the shooting lesson; it cannot be lost.
 //   -  MATHBOOK_GROUND_A_X      on the ground after the first two jumps.
 //   2  MATHBOOK_2_PLATFORM_X    on a ledge -- jump-timed shot, or walk under.
 //   3  MATHBOOK_3_PLATFORM_X    past a real gap between two platforms --
@@ -62,9 +61,10 @@ const platformTop = (clearance) => WORLD.groundY - clearance;
 //                               or skip it at ground level like the ledge.
 //   -  MATHBOOK_GROUND_B_X      on the ground before the last jump and the
 //                               climb to the staircase.
-const MATHBOOK_1_X = SPAWN_X + 780; // 900 -- alone; nothing else until PLATFORM_A_X
-const PLATFORM_A_X = MATHBOOK_1_X + 1100; // 2000 -- quiet stretch, then a jump
-const PLATFORM_B_X = PLATFORM_A_X + 800; // 2800 -- clustered with A
+const TUTORIAL_BLOCK_X = 760; // soon after the intro, before any enemy
+const MATHBOOK_1_X = 1500; // the first shooting lesson
+const PLATFORM_A_X = 2450; // after the Lund arrow sign
+const PLATFORM_B_X = 2800; // clustered with A
 const MATHBOOK_GROUND_A_X = PLATFORM_B_X + 700; // 3500
 const MATHBOOK_2_PLATFORM_X = PLATFORM_B_X + 1300; // 4100 -- carries the ledge book
 const GAP_APPROACH_PLATFORM_X = MATHBOOK_2_PLATFORM_X + 1300; // 5400 -- launch side of the gap
@@ -80,45 +80,62 @@ const MATHBOOK_GROUND_B_X = MATHBOOK_3_PLATFORM_X + 950; // 6770
 // Three checkpoints keep every death in Lund short:
 const CHECKPOINT_AFTER_MATHBOOK_1_X = MATHBOOK_1_X + 200; // 1100 -- past the tutorial book
 const CHECKPOINT_BEFORE_GAP_X = GAP_APPROACH_PLATFORM_X - 300; // 5100 -- short of the gap jump
-// STAIRCASE_START_X is defined below (it's derived from the descent
-// timing); this checkpoint sits one pixel short of it. Reaching it means
-// the ascent climb is already done, so respawning here drops the player
-// right back at the top -- one step forward re-triggers the utspring
-// exactly as if they'd just climbed it.
+// The last checkpoint before the utspring sits at the foot of the
+// staircase (CHECKPOINT_AT_STAIRCASE_FOOT_X, below): a respawn there climbs
+// the steps again rather than being lifted onto them by the handover.
 
 // --- The utspring staircase (PLAN.md task 3.5) ----------------------------
-// The staircase is level data: a descending run of the ordinary platform
-// entity, never a special shape in game.js. Its size is derived from the
-// sequence's own timings in config.js, so the geometry and the auto-run
-// can never drift apart.
+// The staircase is authored art now (config.js LANDMARK.types
+// 'utspring-staircase'), placed at STAIR_ART_X with its bottom landing on
+// the floor line. Everything the player touches is measured off that art,
+// in its own delivered pixels.
 //
-// The descent auto-runs for STAIRCASE.descentDuration while ramping from
-// PLAYER.moveSpeed to moveSpeed * speedRampMultiplier, so the distance
+// The staircase is walked on, up and down, along STAIR_SURFACE: one
+// continuous line through the painted steps (game.js applyStairSurface).
+// It is solid ground, not a platform -- nothing can pass in front of or
+// under the stone, and the player never has to jump a single step: the
+// flights are ramps through the middle of their treads, the landings are
+// flat. Jumping still works anywhere on it.
+//
+// Feet stand in the middle of each walking face, not on its back edge:
+// the art draws every tread and landing with a visible top face, ~22px
+// deep on the landings and ~12px on the treads, so the line runs 11px
+// below a landing's top edge and 6px below a tread's.
+//
+// [u, v]: u is px from the art's left edge, v is the row in the delivered
+// art (config.js 'utspring-staircase'; row 410 is the floor line, its
+// baselineY). Left to right: up the climb, across the top landing, then
+// four flights with a landing after each; the last one ends on the floor.
+const STAIR_ART_X = 8070;
+const STAIR_ART_FLOOR_ROW = LANDMARK.types['utspring-staircase'].baselineY; // 410
+const STAIR_SURFACE = [
+  [16, 410], [369, 173], // the climb, through the middle of its treads
+  [750, 173], // the top landing
+  [798, 237], [871, 237], // flight 1, landing
+  [936, 295], [1140, 295], // flight 2, landing
+  [1188, 358], [1310, 358], // flight 3, landing
+  [1398, 410], // flight 4, onto the floor
+].map(([u, v]) => [STAIR_ART_X + u, WORLD.groundY - (STAIR_ART_FLOOR_ROW - v)]);
+const STAIR_TOP_Y = STAIR_SURFACE[1][1]; // the top landing
+
+// The handover line: on the top landing, a few steps short of the first
+// flight. The descent auto-runs for STAIRCASE.descentDuration while ramping
+// from PLAYER.moveSpeed to moveSpeed * speedRampMultiplier, so the distance
 // covered is the average of the two speeds times the duration:
 //
 //   360 * ((1 + 1.5) / 2) * 3.0 = 1,350px
 //
-// One step short of that (floor(...) - 1) leaves a flat run-out at the
-// bottom, so the player is standing on level ground when they come to a
-// stop rather than still mid-drop off the last step.
+// That carries the player down all four flights and on across the floor,
+// stopping in front of Polhemskolan (POLHEM_ART_X, below).
 const UTSPRING_RUN_LENGTH =
   PLAYER.moveSpeed * ((1 + STAIRCASE.speedRampMultiplier) / 2) * STAIRCASE.descentDuration; // 1350
-const STAIR_STEPS = Math.max(1, Math.floor(UTSPRING_RUN_LENGTH / PLATFORM.width) - 1); // 5
-const STAIR_TOP_CLEARANCE = STAIR_STEPS * STAIRCASE.stepDrop; // 220px above the ground
-
-// Climbing to the top landing: as few platforms as reach it without any
-// single hop exceeding CLEARANCE_HIGH, which is already a proven-reachable
-// rise elsewhere in this file. 220 / 130 -> 2 hops of 110px each.
-const STAIR_ASCENT_STEPS = Math.ceil(STAIR_TOP_CLEARANCE / CLEARANCE_HIGH); // 2
-const STAIR_ASCENT_RISE = STAIR_TOP_CLEARANCE / STAIR_ASCENT_STEPS; // 80
-
-// The top of the first step: the mark the handover stands the player on.
-const STAIR_TOP_Y = WORLD.groundY - STAIR_TOP_CLEARANCE;
-
-// Where the sequence ends is Lund's derived length; everything else in the
-// staircase is measured backwards from there, so the section still runs
-// its full 10,000px.
-const UTSPRING_END_X = SPAWN_X + 10000; // 10120
+const STAIRCASE_START_X = STAIR_ART_X + 700; // 8770 -- where the descent starts
+// The handover line: the foot of the staircase, where the climb begins
+// (STAIR_SURFACE's first point). From here the utspring auto-walks Jakob up
+// the climb and across the top landing to STAIRCASE_START_X, then the
+// descent above takes over.
+const UTSPRING_TAKEOVER_X = STAIR_ART_X + 16; // 8086
+const UTSPRING_END_X = STAIRCASE_START_X + UTSPRING_RUN_LENGTH; // 10120 -- where the run stops
 
 // Background-transition repair: the Lund-utspring -> Göteborg-city section
 // boundary used to sit at UTSPRING_END_X itself. BACKGROUND.blendBandWidth
@@ -130,35 +147,32 @@ const UTSPRING_END_X = SPAWN_X + 10000; // 10120
 // the descent itself. Moving the boundary a clear buffer past UTSPRING_END_X
 // means the blend band cannot be reached until the player has walked forward
 // after control returns -- the celebration and the run that ends it stay
-// visually Lund/Polhem throughout, and Göteborg only starts revealing itself
-// once the player is moving through it again.
+// visually Lund throughout, and Göteborg only starts revealing itself once
+// the player is moving through it again.
 const LUND_GOTEBORG_BACKGROUND_X = UTSPRING_END_X + 600; // 10720
-const STAIRCASE_START_X = UTSPRING_END_X - UTSPRING_RUN_LENGTH; // 8770 -- the handover line
-const CHECKPOINT_AT_STAIRCASE_TOP_X = STAIRCASE_START_X - 1; // 8769 -- see the note above
-const STAIRCASE_ASCENT_X = STAIRCASE_START_X - STAIR_ASCENT_STEPS * PLATFORM.width; // 8330
+const CHECKPOINT_AT_STAIRCASE_FOOT_X = STAIR_ART_X - 150; // 7920
 
-const PLATFORM_C_X = STAIRCASE_ASCENT_X - 1100; // 7230 -- last ordinary jump before the climb
+// Polhemskolan, the school the utspring runs out of (config.js
+// LANDMARK.types 'utspring-polhem'): placed on the floor line behind the
+// lower half of the staircase. Its left edge is tucked behind the stair
+// pillar at u ~870, so the cut-off tree line there never shows, and its
+// main building (local x ~1250) stands right behind where the run stops.
+const POLHEM_ART_X = STAIR_ART_X + 862; // 8932
 
-// The descending run itself: one platform per step, each PLATFORM.width
-// along and STAIRCASE.stepDrop further down. The final step sits one drop
-// above the ground, and the ground carries the run-out.
-const stairSteps = () =>
-  Array.from({ length: STAIR_STEPS }, (unused, i) => ({
-    type: 'platform',
-    x: STAIRCASE_START_X + i * PLATFORM.width,
-    y: WORLD.groundY - (STAIR_TOP_CLEARANCE - i * STAIRCASE.stepDrop),
-    walkway: true,
-  }));
+// The clouds over the descent, [centre x, height of the cloud's centre
+// above the floor]: one above each stretch of the staircase (u ~830, 1080,
+// 1330 in the art -- the first landing, the second, the last flight),
+// stepping down with it about 190 px clear of the steps and their
+// balloons. 250 px apart, so even 'Entrepreneurship', the widest, never
+// touches its neighbours. Each is revealed during the climb or descent
+// (config.js STAIRCASE.clouds.appearLead).
+const UTSPRING_CLOUDS = [
+  [STAIR_ART_X + 830, 400],
+  [STAIR_ART_X + 1080, 345],
+  [STAIR_ART_X + 1330, 285],
+];
 
-// The approach climb, ending on a landing level with the first step so the
-// top of the staircase reads as one continuous surface.
-const stairAscent = () =>
-  Array.from({ length: STAIR_ASCENT_STEPS }, (unused, i) => ({
-    type: 'platform',
-    x: STAIRCASE_ASCENT_X + i * PLATFORM.width,
-    y: WORLD.groundY - (i + 1) * STAIR_ASCENT_RISE,
-    walkway: true,
-  }));
+const PLATFORM_C_X = MATHBOOK_GROUND_B_X + 460; // 7230 -- last ordinary jump before the climb
 
 // --- Göteborg (6,900px: the end of the utspring to the Golem's line) -----
 // Shortened again from 9,200px (author feedback: still too long), and four
@@ -284,31 +298,47 @@ const RESEARCH_GOLEM_EXIT_WALK_TRIGGER_X = RESEARCH_GOLEM_EXIT_X - RESEARCH_GOLE
 // section is the arena plus a short lead-in and run-out, so resizing the
 // arena resizes the section and pushes everything downstream along.
 const SECTION_CLINIC_X = SECTION_HAGA_X + HAGA_LENGTH; // 26283
-const RECEPTION_LEAD_IN = 200; // px of section before the arena's left edge
+// The arena starts right where the hospital does. The 200px that used to
+// lead in are added to the run-out instead, keeping CLINIC_LENGTH -- and
+// everything downstream of the Clinic -- where it was.
+const RECEPTION_LEAD_IN = 0; // px of section before the arena's left edge
 const RECEPTION_ARENA_WIDTH = 1700; // px -- the camera zooms to fit exactly this
-const RECEPTION_RUN_OUT = 500; // px after the arena before USA begins
+const RECEPTION_RUN_OUT = 700; // px after the arena before USA begins
 const RECEPTION_ARENA_LEFT_X = SECTION_CLINIC_X + RECEPTION_LEAD_IN; // 26483
 const RECEPTION_ARENA_RIGHT_X = RECEPTION_ARENA_LEFT_X + RECEPTION_ARENA_WIDTH; // 28183
 const CLINIC_LENGTH = RECEPTION_LEAD_IN + RECEPTION_ARENA_WIDTH + RECEPTION_RUN_OUT; // 2400
-// The red-cross sign stands just inside the arena's left edge; walking a
-// little past it is what takes control (the sketch's "moves a bit in front
-// of the sign"). The desk stands at the far right, its front edge being the
-// arena's right wall until the encounter is done.
-const RECEPTION_SIGN_X = RECEPTION_ARENA_LEFT_X + 70;
-const RECEPTION_TRIGGER_X = RECEPTION_ARENA_LEFT_X + 200;
+// Control is taken OUTSIDE, on the Haga cobbles, before any of the hospital
+// is on screen: walking right, the view's right edge runs ~530px ahead of
+// Jakob (half the canvas less half config.js CAMERA.deadzoneWidth), so 560px
+// short of the Clinic neither its floor nor its background has appeared
+// yet. It is also clear of Haga's last platform (PLATFORM_I_X, ending 628px
+// short). Jakob stops in front of the red-cross sign and thinks; then, as
+// the camera pulls out to frame the arena, he walks himself in to
+// RECEPTION_WALK_IN_X -- where he always got control -- and the camera
+// crossing into the Clinic is what fades the hospital in (config.js
+// BACKGROUND.blendBandWidth). The walk (~760px at PLAYER.moveSpeed, ~2.1s)
+// fits inside RECEPTION.frameDuration. The desk stands at the far right,
+// its front edge being the arena's right wall until the encounter is done.
+const RECEPTION_TRIGGER_X = SECTION_CLINIC_X - 560;
+const RECEPTION_SIGN_X = RECEPTION_TRIGGER_X + 90;
+const RECEPTION_WALK_IN_X = RECEPTION_ARENA_LEFT_X + 200;
 const RECEPTION_DESK_X = RECEPTION_ARENA_RIGHT_X - 60 - 180; // 180 = config.js RECEPTION.desk.width
 
 // --- USA: the stadium (~7,100px) ----------------------------------------
 const SECTION_USA_X = SECTION_CLINIC_X + CLINIC_LENGTH; // 28331
+// A death anywhere in USA resumes here, not back at the Research Golem's
+// suit pickup (the last checkpoint before it).
+const CHECKPOINT_USA_X = SECTION_USA_X + 100;
 const PLATFORM_J_X = SECTION_USA_X + 1200; // 29531
-// The football helmet (USA, exchange semester) needs open ground to
-// charge, not a small elevated platform, so it stands directly on the
+// The football helmets (USA, exchange semester) need open ground to
+// charge, not a small elevated platform, so they stand directly on the
 // ground -- fitting for the "usa stadium" section's open field look
-// (config.js BACKGROUNDS). It sits with generous room either side of it
-// within the section for its ENEMY_HELMET.chargeRange (±450px around it).
+// (config.js BACKGROUNDS). Two of them: one mid-field, one after the K/L
+// platforms, which give a place to jump clear of its charge.
 const USA_HELMET_X = SECTION_USA_X + 3200; // 31531
 const PLATFORM_K_X = USA_HELMET_X + 1600; // 33131
 const PLATFORM_L_X = PLATFORM_K_X + 900; // 34031 -- clustered with K
+const USA_HELMET_2_X = PLATFORM_L_X + 800; // 34831
 const SECTION_PORTAL_HAGA_X = PLATFORM_L_X + 1400; // 35431 -- where USA ends
 
 // --- Haga: the Graduation portal lead-in (~1,500px) ------------------------
@@ -373,8 +403,7 @@ const GRADUATION_ARENA_FRAME = {
 };
 
 const GRADUATION_X = GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_BOSS_LOCAL_X;
-const ARMOUR_X = GRADUATION_X + GRADUATION.width + 80; // local 1580
-const FINAL_COMIC_X = ARMOUR_X + 100; // local 1680, inside the frame
+const ARMOUR_X = GRADUATION_X + GRADUATION.width + 80; // local 1580, inside the frame
 
 // --- Background sections ----------------------------------------------------
 // Ten sections, in level order (level-compression pass: was eight, split by
@@ -415,7 +444,10 @@ const FINAL_COMIC_X = ARMOUR_X + 100; // local 1680, inside the frame
 // length is set by RESEARCH_GOLEM_EXIT_X, the venue's own explicit exit
 // line -- see the render-state repair note above GOLEM_ACTIVATION_X.)
 const SECTION_POLHEM_X = 3700; // moved in with Lund's shortening (was 4,200)
-const SECTION_LUND_RETURN_X = STAIRCASE_ASCENT_X - 1000; // 7330
+// Back to the Lund town strips (config.js 'lund-utspring') a short run
+// before the staircase, so the stair and Polhemskolan take over from
+// there.
+const SECTION_LUND_RETURN_X = STAIR_ART_X - 740; // 7330
 // Göteborg's backdrop starts at LUND_GOTEBORG_BACKGROUND_X (13320), a buffer
 // past UTSPRING_END_X (12720) -- see that constant's own note above for why
 // this is deliberately not the same line the studentmössa run/celebration
@@ -440,16 +472,16 @@ const SECTION_HANDELS_X = GOLEM_ACTIVATION_X; // 22420 -- matches researchGolemI
 // whole portal approach and only gives way at the instant the arena's own
 // interior state (game.js graduationInterior()) turns true.
 const SECTION_GU_X = GRADUATION_ACTIVATION_X; // 36907
-const LEVEL_END_X = FINAL_COMIC_X + 500; // 37471
+const LEVEL_END_X = ARMOUR_X + 600; // 37471
 
 // Landmark placements. Parallax is per placement, not per landmark: how
 // far away a thing reads is a layout decision, and the same object could
 // sit on the horizon in one place and close by in another.
-const UF_STAND_X = 1800;
-const POLHEM_MECH_X = 5300; // inside the shortened Polhem section (was 6,200)
+const UF_STAND_X = 4880; // takes the former Polhem mech position; v2 centred where v1 was (5430)
 const STADIUM_X = USA_HELMET_X + 600; // same close spacing to the helmet as before
 // World props (author request). Placement x is the art's left edge.
-const SIGN_LUND_ARROW_X = SPAWN_X + 330; // early in the first Lund backdrop
+const SIGN_LUND_ARROW_X = 1950; // after the movement, jump and shoot lessons
+export const TUTORIAL_END_X = SIGN_LUND_ARROW_X;
 // Centred on the switch from the distant Lund skyline to the Lund streets.
 const SIGN_WELCOME_LUND_X = SECTION_POLHEM_X - LANDMARK.types['sign-welcome-lund'].width / 2;
 // Just after the utspring ends, before the Göteborg backdrop starts to
@@ -478,26 +510,38 @@ export const LEVEL = [
   // The look itself (layers, parallax, colours) is a tunable and lives in
   // config.js BACKGROUNDS. Adding, reordering or resizing a section is a
   // data edit here; it is never a code edit.
-  { type: 'background-section', name: 'Lund — town', xStart: 0, xEnd: SECTION_POLHEM_X, background: 'lund-town' },
-  { type: 'background-section', name: 'Polhem — the school', xStart: SECTION_POLHEM_X, xEnd: SECTION_LUND_RETURN_X, background: 'polhem-school' },
-  { type: 'background-section', name: 'Lund — the utspring', xStart: SECTION_LUND_RETURN_X, xEnd: LUND_GOTEBORG_BACKGROUND_X, background: 'lund-utspring' },
-  { type: 'background-section', name: 'Göteborg — the city', xStart: LUND_GOTEBORG_BACKGROUND_X, xEnd: SECTION_HANDELS_X, background: 'goteborg-city' },
-  { type: 'background-section', name: 'Handels — Golem arena', xStart: SECTION_HANDELS_X, xEnd: SECTION_HAGA_X, background: 'handels-interior' },
-  { type: 'background-section', name: 'Haga — Göteborg exterior', xStart: SECTION_HAGA_X, xEnd: SECTION_CLINIC_X, background: 'goteborg-haga' },
-  { type: 'background-section', name: 'Clinic — reception', xStart: SECTION_CLINIC_X, xEnd: SECTION_USA_X, background: 'clinic-reception' },
-  { type: 'background-section', name: 'USA — the stadium', xStart: SECTION_USA_X, xEnd: SECTION_PORTAL_HAGA_X, background: 'usa-stadium' },
-  { type: 'background-section', name: 'Haga — portal lead-in', xStart: SECTION_PORTAL_HAGA_X, xEnd: SECTION_GU_X, background: 'goteborg-haga-portal' },
-  { type: 'background-section', name: 'GU — Graduation arena', xStart: SECTION_GU_X, xEnd: LEVEL_END_X, background: 'gu-ceremony' },
+  // `music` is the config.js MUSIC.tracks entry the section plays. Sections
+  // sharing a track share it seamlessly (no restart). The boss fights
+  // override it while they run (game.js currentMusic), so the Handels
+  // interior's 'exploration' is only heard on the walk out after the Golem.
+  { type: 'background-section', name: 'Lund — town', xStart: 0, xEnd: SECTION_POLHEM_X, background: 'lund-town', music: 'exploration' },
+  { type: 'background-section', name: 'Polhem — the school', xStart: SECTION_POLHEM_X, xEnd: SECTION_LUND_RETURN_X, background: 'polhem-school', music: 'exploration' },
+  { type: 'background-section', name: 'Lund — the utspring', xStart: SECTION_LUND_RETURN_X, xEnd: LUND_GOTEBORG_BACKGROUND_X, background: 'lund-utspring', music: 'exploration' },
+  { type: 'background-section', name: 'Göteborg — the city', xStart: LUND_GOTEBORG_BACKGROUND_X, xEnd: SECTION_HANDELS_X, background: 'goteborg-city', music: 'exploration' },
+  { type: 'background-section', name: 'Handels — Golem arena', xStart: SECTION_HANDELS_X, xEnd: SECTION_HAGA_X, background: 'handels-interior', music: 'exploration' },
+  { type: 'background-section', name: 'Haga — Göteborg exterior', xStart: SECTION_HAGA_X, xEnd: SECTION_CLINIC_X, background: 'goteborg-haga', music: 'exploration' },
+  { type: 'background-section', name: 'Clinic — reception', xStart: SECTION_CLINIC_X, xEnd: SECTION_USA_X, background: 'clinic-reception', music: 'clinic', ground: 'clinicGroundTexture' },
+  { type: 'background-section', name: 'USA — the stadium', xStart: SECTION_USA_X, xEnd: SECTION_PORTAL_HAGA_X, background: 'usa-stadium', music: 'usa' },
+  { type: 'background-section', name: 'Haga — portal lead-in', xStart: SECTION_PORTAL_HAGA_X, xEnd: SECTION_GU_X, background: 'goteborg-haga-portal', music: 'exploration' },
+  { type: 'background-section', name: 'GU — Graduation arena', xStart: SECTION_GU_X, xEnd: LEVEL_END_X, background: 'gu-ceremony', music: 'graduation' },
 
   // Landmarks: one-off background objects at a single x, each scrolling
   // at its own rate. Not tiled, not gameplay -- nothing collides with
   // them.
   { type: 'landmark', landmark: 'uf-stand', x: UF_STAND_X, parallax: 1 },
-  { type: 'landmark', landmark: 'polhem-mech', x: POLHEM_MECH_X, parallax: 1 },
+  // The utspring scenery: Polhemskolan first, so the staircase stands in
+  // front of it. Both on the world plane (parallax 1) -- the staircase
+  // because the player stands on it, the school so its tucked-in left
+  // edge stays behind the stair pillar at every camera position.
+  { type: 'landmark', landmark: 'utspring-polhem', x: POLHEM_ART_X, parallax: 1 },
+  { type: 'landmark', landmark: 'utspring-staircase', x: STAIR_ART_X, parallax: 1 },
   { type: 'landmark', landmark: 'stadium', x: STADIUM_X, parallax: 0.35 },
   { type: 'landmark', landmark: 'sign-lund-arrow', x: SIGN_LUND_ARROW_X, parallax: 1 },
   { type: 'landmark', landmark: 'sign-welcome-lund', x: SIGN_WELCOME_LUND_X, parallax: 1 },
   { type: 'landmark', landmark: 'sign-gothenburg-arrow', x: SIGN_GOTHENBURG_X, parallax: 1, showAfterUtspring: true },
+  // Passing the Gothenburg sign: Jakob's thought as Lund is left behind.
+  // Never takes control (config.js GOTHENBURG_THOUGHT).
+  { type: 'thought-trigger', x: SIGN_GOTHENBURG_X + LANDMARK.types['sign-gothenburg-arrow'].width / 2, text: GOTHENBURG_THOUGHT.text },
   { type: 'landmark', landmark: 'departures-board', x: DEPARTURES_BOARD_X, parallax: 1 },
 
   // Research Golem venue art (AGENTS.md §6's boss-specific world-space
@@ -530,10 +574,13 @@ export const LEVEL = [
 
   { type: 'player-spawn', x: SPAWN_X },
 
-  //   1  alone. Flat ground, nothing else on screen, no platform or gap
-  //      until it's dealt with. Standing still and taking a hit costs some
+  // The first stretch is safe movement, then a low solid block to jump.
+  // The maths book follows at a distance as the shooting lesson.
+  { type: 'tutorial-block', x: TUTORIAL_BLOCK_X, y: WORLD.groundY - TUTORIAL.blockHeight },
+
+  //   1  after the jump block. Standing still and taking a hit costs some
   //      health and nothing else; walking backwards avoids it entirely.
-  //      This is the shooting tutorial (AUDIT.md A1): a player who stands
+  //      This is the shooting lesson (AUDIT.md A1): a player who stands
   //      still here for 60s must still be alive. The second and third
   //      placements below pick up the faster/tougher default tuning in
   //      config.js (task 1); this one keeps the old, gentler numbers as an
@@ -590,31 +637,30 @@ export const LEVEL = [
   // moment in the game where the player is not fighting, and that is the
   // entire point of it.
   //
-  // Climb to the top landing, then the descending staircase. Both are
-  // ordinary one-way platforms -- the same entity used everywhere else.
-  ...stairAscent(),
-  ...stairSteps(),
+  // The staircase itself: the line the player walks up and down on
+  // (STAIR_SURFACE above) -- also what the utspring's auto-run descends.
+  { type: 'stair-surface', points: STAIR_SURFACE },
 
   // Crossing the top of the staircase hands control over to the scripted
   // sequence in game.js, which auto-runs the descent, rains confetti,
   // flashes, puts the studentmössa on the player and shows the title
   // card before handing control back. Fires exactly once per playthrough.
   //
-  // `y` is the mark: the top of the first step, where the handover stands
-  // the player. The ground below the staircase is flat and open -- there
-  // is no wall to stop anyone simply holding right -- so without this a
-  // player arrives *underneath* the stairs and runs the whole beat along
-  // level ground, never touching the thing it is named after. Someone who
-  // did climb the approach platforms is already at exactly this height,
-  // so for them it changes nothing.
-  // Audit finding A2: one pixel short of the trigger line, so a death
-  // during the ascent climb resumes right at the top of it rather than
-  // back at PLATFORM_C_X -- and since the ground here is open (no wall,
-  // see the comment above), a respawn one step from the trigger simply
-  // walks straight into the utspring on the very next step.
-  { type: 'checkpoint', x: CHECKPOINT_AT_STAIRCASE_TOP_X },
+  // `y` is the mark: the top landing, where the handover stands the
+  // player. The staircase is solid ground, so the only way to reach this
+  // line is across that landing and this changes nothing; it stays as a
+  // guard.
+  // Audit finding A2: a death anywhere near the climb resumes at the foot
+  // of the staircase rather than back at PLATFORM_C_X.
+  { type: 'checkpoint', x: CHECKPOINT_AT_STAIRCASE_FOOT_X },
 
-  { type: 'utspring-trigger', x: STAIRCASE_START_X, y: STAIR_TOP_Y },
+  { type: 'utspring-trigger', x: UTSPRING_TAKEOVER_X, descentX: STAIRCASE_START_X, y: STAIR_TOP_Y },
+
+  // What the Lund years were, written on clouds over the staircase. Each
+  // one drifts in as the descent reaches it (game.js drawUtspringClouds)
+  // and they fade out with the title card. Words: config.js
+  // STAIRCASE.clouds.
+  ...UTSPRING_CLOUDS.map(([x, h], i) => ({ type: 'utspring-cloud', x, y: WORLD.groundY - h, text: STAIRCASE.clouds.words[i] })),
 
   // The checkpoint sits at the END of the sequence, after control
   // returns: someone who dies shortly afterwards resumes here already
@@ -705,6 +751,7 @@ export const LEVEL = [
     arenaLeftX: RECEPTION_ARENA_LEFT_X,
     arenaRightX: RECEPTION_ARENA_RIGHT_X,
     signX: RECEPTION_SIGN_X,
+    walkInX: RECEPTION_WALK_IN_X,
     deskX: RECEPTION_DESK_X,
     // Three tiers of blocks (~100, ~215, ~320 above the ground), centred
     // between the sign (dx 70) and the desk (dx 1460) with roughly the
@@ -765,16 +812,19 @@ export const LEVEL = [
     ],
     round3Cards: ['green', 'red', 'red', 'yellow', 'green', 'yellow', 'red', 'green', 'yellow', 'red'], // top first
   },
+  { type: 'checkpoint', x: CHECKPOINT_USA_X },
   { type: 'platform', x: PLATFORM_J_X, y: platformTop(CLEARANCE_HIGH) },
 
-  // The football helmet (USA, exchange semester): idle, telegraph, charge,
-  // recover -- "dodge, then punish". Flat open ground, no platform: its
-  // ENEMY_HELMET.minX/maxX (centred on this x) already bound the charge to
-  // this stretch on their own.
-  { type: 'enemy-helmet', x: USA_HELMET_X },
+  // The football helmets (USA, exchange semester): idle, telegraph,
+  // charge, recover -- "dodge, then punish". Flat open ground, no
+  // platform. minX/maxX bound where a charge can carry them: free across
+  // all of USA, stopping only at the Graduation portal's takeover line, so
+  // one never charges into the scripted approach.
+  { type: 'enemy-helmet', x: USA_HELMET_X, minX: SECTION_USA_X, maxX: GRADUATION_TAKEOVER_X - ENEMY_HELMET.width },
 
   { type: 'platform', x: PLATFORM_K_X, y: platformTop(CLEARANCE_LOW) },
   { type: 'platform', x: PLATFORM_L_X, y: platformTop(CLEARANCE_HIGH) },
+  { type: 'enemy-helmet', x: USA_HELMET_2_X, minX: SECTION_USA_X, maxX: GRADUATION_TAKEOVER_X - ENEMY_HELMET.width },
 
   // Story beat 9 (AGENTS.md §3): the portal. Control is taken as it comes
   // into view, the camera frames it, Jakob thinks, walks into it, comic,
@@ -797,12 +847,18 @@ export const LEVEL = [
   // GRADUATION_ARENA_FRAME above).
   { type: 'boss-graduation', x: GRADUATION_X, activationX: GRADUATION_ACTIVATION_X, arenaFrame: GRADUATION_ARENA_FRAME },
 
-  // Picked up immediately before the final comic (AGENTS.md §3).
-  { type: 'pickup', outfit: 'armour', x: ARMOUR_X },
-  // Story beat 11 (AGENTS.md §3): final comic, then straight to the application screen --
-  // the game ends before the Paradox fight (AGENTS.md §3, "do not add a
-  // Paradox fight").
-  { type: 'comic-trigger', x: FINAL_COMIC_X, comicId: 'final', next: 'application' },
+  // The ending: touching the armour does NOT put it on Jakob -- it opens
+  // Comic 4 ('armour'), then Comic 5 ('final') straight after with no
+  // gameplay between, then the application screen. The game ends before
+  // the Paradox fight (AGENTS.md §3).
+  {
+    type: 'pickup',
+    outfit: 'armour',
+    x: ARMOUR_X,
+    y: WORLD.groundY - PICKUP.sprites.armour.height,
+    comics: ['armour', 'final'],
+    next: 'application',
+  },
 ];
 
 // Height of each spawnable type, used to stand it on the ground by default.
@@ -834,9 +890,12 @@ export function entryY(entry) {
 export const DEBUG_START_X = {
   // Just short of the Lund streets (the Welcome to Lund sign).
   lund: SECTION_POLHEM_X - 500,
+  // Just before the Lund street gives way to the staircase scene.
+  utspring: SECTION_LUND_RETURN_X - 400,
   // Just after the utspring, in front of the Gothenburg sign.
   goteborg: UTSPRING_END_X + 20,
-  clinic: SECTION_CLINIC_X - 150,
+  // Short of the reception's takeover, in Haga.
+  clinic: RECEPTION_TRIGGER_X - 400,
   // Past the Clinic encounter, approaching the departures board and USA.
   usa: SECTION_USA_X - 800,
   // The end of USA, just before the Haga portal lead-in.

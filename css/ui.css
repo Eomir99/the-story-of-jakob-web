@@ -3,6 +3,26 @@
    this file only styles what's inside them. AGENTS.md §5: menus and
    narrative are DOM, never canvas. */
 
+/* The reference image's three simple labels above the opening path. */
+.tutorial-hints {
+  position: absolute;
+  top: 5%;
+  left: 3%;
+  width: 94%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  align-items: start;
+  gap: 1rem;
+  pointer-events: none;
+  text-align: center;
+  color: #fff;
+  font: 700 clamp(0.75rem, 1.7vw, 1.45rem)/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  text-shadow: 0 2px 4px #111827, 0 0 12px #111827;
+}
+.tutorial-hints[hidden] {
+  display: none;
+}
+
 .dom-screen {
   position: absolute;
   inset: 0;
@@ -148,6 +168,22 @@
   max-width: 100%;
   max-height: 82vh; /* a single panel never eats the whole scrollable view */
   line-height: 0; /* no inline-image baseline gap under the frame */
+}
+
+/* Side-by-side panels (comics.js): one row, each panel appearing on its
+   own click. A waiting panel already takes its space, just unseen. */
+.comic-row {
+  display: flex;
+  gap: 0.75rem;
+  max-width: 100%;
+}
+
+.comic-row .comic-frame {
+  min-width: 0;
+}
+
+.comic-frame--waiting {
+  visibility: hidden;
 }
 
 .comic-panel-image {
@@ -310,6 +346,26 @@
 .persistent-control:focus-visible {
   color: #f7f3e3;
   background: rgba(13, 17, 23, 0.75);
+}
+
+/* The volume slider: a pill like its neighbours, with the slider inside. */
+.volume-control {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.volume-control:focus-within {
+  color: #f7f3e3;
+  background: rgba(13, 17, 23, 0.75);
+}
+
+.volume-control input {
+  width: 4.5rem;
+  height: 0.8rem;
+  margin: 0;
+  accent-color: rgba(247, 243, 227, 0.7);
+  cursor: pointer;
 }
 
 /* ---------------------------------------------------------------------

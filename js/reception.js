@@ -38,8 +38,9 @@
 //   DONE      walls open, camera released, shooting back. Only re-entered
 //             through Round 3's Retry.
 
-import { CANVAS, WORLD, PLATFORM, RECEPTION } from './config.js';
+import { CANVAS, WORLD, PLATFORM, PLAYER, RECEPTION } from './config.js';
 import { setInputSuppressed, getPointer } from './input.js';
+import { getImage } from './assets.js';
 
 const PHASE = {
   IDLE: 'idle',
@@ -120,6 +121,10 @@ export function createReception(entry) {
     arenaLeftX: entry.arenaLeftX,
     arenaRightX: entry.arenaRightX,
     signX: entry.signX,
+    walkInX: entry.walkInX,
+    // The left wall closes only once Jakob has walked in: control is taken
+    // outside the arena (level.js RECEPTION_TRIGGER_X).
+    insideArena: false,
     deskX: entry.deskX,
     basePlatforms,
     platforms: [...basePlatforms, ...round3Platforms],
@@ -293,6 +298,14 @@ function liveItems(reception) {
   return round.items.slice(batchStart, batchStart + round.batchSize).filter((item) => !item.collected);
 }
 
+// The stretch just before a round, with control still taken: the pop-in
+// before Round 1 (READY) and each later round's intro (INTRO). The round's
+// hint and its first pickups are already shown then, so there is time to
+// take in what to do -- but the clock only starts with the round itself.
+function roundPreview(reception) {
+  return reception.phase === PHASE.READY || reception.phase === PHASE.INTRO;
+}
+
 function roundComplete(reception) {
   const round = currentRound(reception);
   return round.items.every((item) => item.collected) && reception.cards.every((card) => card.sorted);
@@ -378,6 +391,8 @@ function endEncounter(reception, player) {
 // the clock starts. Used both for moving on and for Round 3's Retry.
 function beginIntro(reception, player) {
   const round = currentRound(reception);
+  // Fresh before the intro shows them (roundPreview), not only at the start.
+  for (const item of round.items) item.collected = false;
   setInputSuppressed(true);
   player.invincible = true;
   player.shootingDisabled = true;
@@ -441,6 +456,7 @@ export function updateReception(reception, dt, player) {
   }
 
   if (reception.phase === PHASE.FRAME) {
+    walkIn(reception, player);
     if (reception.timer >= RECEPTION.frameDuration) {
       showPlatforms(reception, reception.basePlatforms);
       say(reception, 'player', RECEPTION.lines.ready, RECEPTION.readyDuration);
@@ -450,6 +466,8 @@ export function updateReception(reception, dt, player) {
   }
 
   if (reception.phase === PHASE.READY) {
+    // Normally already there: the walk fits inside frameDuration.
+    if (!walkIn(reception, player)) return;
     if (reception.timer < RECEPTION.readyDuration) return;
     if (reception.debugStartRound > 1) {
       reception.roundIndex = Math.min(reception.debugStartRound, reception.rounds.length) - 1;
@@ -558,6 +576,18 @@ export function skipReception(reception) {
   enterPhase(reception, PHASE.DONE);
 }
 
+// The walk in from the takeover, during the camera pull-out: at normal
+// walking speed until he reaches walkInX, then standing (input is still
+// off until READY hands it back). Returns true once he is there.
+function walkIn(reception, player) {
+  if (player.x < reception.walkInX) {
+    player.autoRun = PLAYER.moveSpeed;
+    return false;
+  }
+  player.autoRun = null;
+  return true;
+}
+
 function encounterRunning(reception) {
   return reception && reception.phase !== PHASE.IDLE && reception.phase !== PHASE.DONE;
 }
@@ -567,7 +597,8 @@ function encounterRunning(reception) {
 // at DONE.
 export function applyReceptionWalls(reception, player) {
   if (!encounterRunning(reception)) return;
-  if (player.x < reception.arenaLeftX) player.x = reception.arenaLeftX;
+  if (player.x >= reception.arenaLeftX) reception.insideArena = true;
+  if (reception.insideArena && player.x < reception.arenaLeftX) player.x = reception.arenaLeftX;
   const maxX = reception.deskX - player.width;
   if (player.x > maxX) player.x = maxX;
 }
@@ -604,6 +635,10 @@ export function drawReceptionScenery(ctx, reception) {
   drawPlatforms(ctx, reception);
   if (reception.phase === PHASE.ROUND) {
     for (const item of liveItems(reception)) drawItem(ctx, reception, item);
+  } else if (roundPreview(reception)) {
+    // Fading in alongside the platforms popping in.
+    const fade = Math.min(1, reception.timer / RECEPTION.platformPopDuration);
+    for (const item of liveItems(reception)) drawItem(ctx, reception, item, fade);
   }
 }
 
@@ -631,6 +666,13 @@ function drawSign(ctx, reception) {
 function drawDesk(ctx, reception) {
   const spec = RECEPTION.desk;
   const x = Math.round(reception.deskX);
+  // The authored counter (config.js RECEPTION.desk.sprite), left end at
+  // the wall. The box below is only a fallback if it failed to load.
+  const image = getImage(spec.sprite.path);
+  if (image) {
+    ctx.drawImage(image, x, WORLD.groundY - spec.sprite.height, spec.sprite.width, spec.sprite.height);
+    return;
+  }
   const y = WORLD.groundY - spec.height;
   ctx.fillStyle = spec.color;
   ctx.fillRect(x, y, spec.width, spec.height);
@@ -659,11 +701,17 @@ function drawPlatforms(ctx, reception) {
     const height = platform.height * scale;
     const x = Math.round(platform.x + platform.width / 2 - width / 2);
     const y = Math.round(platform.y + platform.height / 2 - height / 2);
+    const style = RECEPTION.platformStyle;
     ctx.globalAlpha = t;
-    ctx.fillStyle = PLATFORM.color;
+    ctx.fillStyle = style.shadowColor;
+    ctx.fillRect(x + style.shadowOffset, y + style.shadowOffset, width, height);
+    ctx.fillStyle = style.color;
     ctx.fillRect(x, y, width, height);
-    ctx.fillStyle = PLATFORM.topHighlightColor;
-    ctx.fillRect(x, y, width, PLATFORM.topHighlightHeight);
+    ctx.fillStyle = style.topColor;
+    ctx.fillRect(x, y, width, style.topHeight);
+    ctx.strokeStyle = style.outlineColor;
+    ctx.lineWidth = style.outlineWidth;
+    ctx.strokeRect(x, y, width, height);
     ctx.globalAlpha = 1;
   }
 }
@@ -671,22 +719,40 @@ function drawPlatforms(ctx, reception) {
 // Placeholder task art, bobbing gently inside a soft glow so it reads as
 // "grab me": a sheet of paper (file), an unhappy face (complaint) or a
 // globe (non-EU patient).
-function drawItem(ctx, reception, item) {
+// alpha: the item's overall opacity (the fade-in before a round starts).
+function drawItem(ctx, reception, item, alpha = 1) {
   const spec = RECEPTION.item;
+  ctx.globalAlpha = alpha;
   const bob = Math.sin(reception.clock * spec.bobSpeed) * spec.bobAmplitude;
   const x = Math.round(item.x);
   const y = Math.round(item.y + bob);
-  ctx.fillStyle = spec.glowColor;
-  ctx.fillRect(x - spec.glowPadding, y - spec.glowPadding, item.width + spec.glowPadding * 2, item.height + spec.glowPadding * 2);
+  const pad = spec.glowPadding;
+  ctx.fillStyle = spec.backingColor;
+  ctx.fillRect(x - pad, y - pad, item.width + pad * 2, item.height + pad * 2);
+  const pulse = (1 + Math.sin(reception.clock * spec.borderPulseSpeed)) / 2;
+  ctx.globalAlpha = alpha * (spec.borderMinAlpha + (1 - spec.borderMinAlpha) * pulse);
+  ctx.strokeStyle = spec.borderColor;
+  ctx.lineWidth = spec.borderWidth;
+  ctx.strokeRect(x - pad, y - pad, item.width + pad * 2, item.height + pad * 2);
+  ctx.globalAlpha = alpha;
 
   if (item.kind === 'file') {
-    ctx.fillStyle = spec.color;
-    ctx.fillRect(x, y, item.width, item.height);
-    ctx.strokeStyle = spec.outlineColor;
-    ctx.lineWidth = 2;
-    ctx.strokeRect(x, y, item.width, item.height);
+    // The sheet, sticking up out of the folder, with its lines of text.
+    const tab = spec.folderTabHeight;
+    ctx.fillStyle = spec.paperColor;
+    ctx.fillRect(x + 4, y, item.width - 8, item.height - tab);
     ctx.fillStyle = spec.lineColor;
-    for (let i = 0; i < 4; i++) ctx.fillRect(x + 6, y + 8 + i * 7, item.width - 12, 2);
+    for (let i = 0; i < 2; i++) ctx.fillRect(x + 8, y + 5 + i * 5, item.width - 16, 2);
+    // The folder: a tab on its top-left, then the front cover.
+    const coverY = y + item.height * 0.4;
+    ctx.fillStyle = spec.folderColor;
+    ctx.fillRect(x, coverY - tab, item.width * 0.45, tab);
+    ctx.fillRect(x, coverY, item.width, y + item.height - coverY);
+    ctx.strokeStyle = spec.outlineColor;
+    ctx.lineWidth = spec.outlineWidth;
+    ctx.strokeRect(x + 4, y, item.width - 8, coverY - y);
+    ctx.strokeRect(x, coverY, item.width, y + item.height - coverY);
+    ctx.globalAlpha = 1;
     return;
   }
 
@@ -698,8 +764,9 @@ function drawItem(ctx, reception, item) {
   ctx.arc(cx, cy, r, 0, Math.PI * 2);
   ctx.fill();
   ctx.strokeStyle = spec.outlineColor;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = spec.outlineWidth;
   ctx.stroke();
+  ctx.lineWidth = 2;
   ctx.strokeStyle = spec.badgeDetailColor;
   ctx.fillStyle = spec.badgeDetailColor;
   if (item.kind === 'complaint') {
@@ -721,6 +788,7 @@ function drawItem(ctx, reception, item) {
     ctx.lineTo(cx + r * 0.85, cy + r * 0.5);
     ctx.stroke();
   }
+  ctx.globalAlpha = 1;
 }
 
 // After the player: speech bubbles, so they are never hidden behind him.
@@ -814,12 +882,15 @@ export function drawReceptionHud(ctx, reception) {
   if (!reception) return;
   if (reception.sortTray) drawSorting(ctx, reception);
   const inRound = reception.phase === PHASE.ROUND || reception.phase === PHASE.FAILED || reception.phase === PHASE.CHOICE;
-  if (!inRound) return;
+  const preview = roundPreview(reception);
+  if (!inRound && !preview) return;
   const round = currentRound(reception);
   const spec = RECEPTION.hud;
   drawHint(ctx, round.hint);
 
-  const seconds = Math.ceil(reception.roundTimeLeft);
+  // Before the round starts the clock shows its full time, standing still.
+  const timeLeft = preview ? round.timeLimit : reception.roundTimeLeft;
+  const seconds = Math.ceil(timeLeft);
   const right = CANVAS.width - spec.marginX;
   const baseline = spec.marginY + 26; // baseline of the clock line
 
@@ -829,7 +900,7 @@ export function drawReceptionHud(ctx, reception) {
   ctx.shadowBlur = 6;
 
   ctx.font = spec.font;
-  ctx.fillStyle = reception.roundTimeLeft <= spec.warnBelow ? spec.warnColor : spec.color;
+  ctx.fillStyle = timeLeft <= spec.warnBelow ? spec.warnColor : spec.color;
   const clockText = `${seconds} s`;
   ctx.fillText(clockText, right, baseline);
   drawHourglass(ctx, right - ctx.measureText(clockText).width - 26, baseline - 24, ctx.fillStyle);
@@ -862,14 +933,14 @@ function drawHint(ctx, text) {
   ctx.font = spec.hintFont;
   const textWidth = ctx.measureText(text).width;
   const width = textWidth + spec.hintPaddingX * 2;
-  const height = 20 + spec.hintPaddingY * 2;
+  const height = spec.hintLineHeight + spec.hintPaddingY * 2;
   const left = Math.round(CANVAS.width / 2 - width / 2);
   ctx.beginPath();
   ctx.roundRect(left, spec.hintTop, width, height, 10);
   ctx.fillStyle = spec.hintFill;
   ctx.fill();
   ctx.strokeStyle = spec.hintBorder;
-  ctx.lineWidth = 2;
+  ctx.lineWidth = spec.hintBorderWidth;
   ctx.stroke();
   ctx.fillStyle = spec.hintColor;
   ctx.textAlign = 'center';
