@@ -18,8 +18,7 @@
 // (trailing circles).
 //
 // Dialogue source:
-// - comic-1 ("intro") has no dialogue yet; its panels ship with empty
-//   bubbles until Jakob supplies the intended lines.
+// - Comic 1 uses Jakob's supplied v2 intro with its dialogue in the art.
 // - Comics 2-5 are Jakob's v1 pages (art-source/comics/*-v1.png). Their
 //   English dialogue is painted into the artwork itself, so their panels
 //   carry no HTML bubbles. This is a deliberate, author-requested
@@ -35,6 +34,7 @@ export const COMICS = {
       { image: 'comic-1-panel-2.webp', bubbles: [] },
       { image: 'comic-1-panel-3.webp', bubbles: [] },
       { image: 'comic-1-panel-4.webp', bubbles: [] },
+      { image: 'comic-1-panel-5.webp', bubbles: [] },
     ],
   },
 

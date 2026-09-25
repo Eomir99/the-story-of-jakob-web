@@ -991,8 +991,10 @@ export const PICKUP = {
   labelColor: '#f7f3e3',
   labelGapAboveBox: 6, // px between the label's baseline and the box top
   // Pickups drawn from art instead of a labelled box. The sprite's box is
-  // also the pickup's touch box, and it stands on the ground.
+  // also the pickup's touch box. Optional draw dimensions enlarge only
+  // the artwork, keeping its bottom aligned with the existing touch box.
   sprites: {
+    suit: { path: 'assets/backgrounds/suit-pickup.webp', width: 32, height: 32, drawWidth: 76, drawHeight: 100 },
     armour: { path: 'assets/backgrounds/armour-pickup.webp', width: 80, height: 74 },
   },
 };
@@ -1019,6 +1021,8 @@ export const PLATFORM = {
 // The opening tutorial's single low block. Its top is landable, and a held
 // jump clears it with room to spare before the first enemy appears.
 export const TUTORIAL = {
+  // Foliage extends beyond the solid crate; its wooden body matches 88x72.
+  sprite: { path: 'assets/backgrounds/tutorial-crate.webp', width: 110, height: 73, offsetX: -11, offsetY: 0 },
   blockWidth: 88,
   blockHeight: 72,
   blockColor: '#1e5b7a',

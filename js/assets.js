@@ -49,6 +49,8 @@ export const MANIFEST = [
   { path: 'assets/bosses/graduation-pillar-2.png' },
   { path: 'assets/bosses/graduation-pillar-3.png' },
   { path: 'assets/backgrounds/armour-pickup.webp' },
+  { path: 'assets/backgrounds/suit-pickup.webp' },
+  { path: 'assets/backgrounds/tutorial-crate.webp' },
   { path: 'assets/player/base.png' },
   { path: 'assets/player/studentmossa.png' },
   { path: 'assets/player/suit.png' },

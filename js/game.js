@@ -2155,6 +2155,12 @@ function drawPlayerHud(ctx) {
 function drawTutorialBlock(ctx) {
   if (!tutorialBlock) return;
   const { x, y, width, height } = tutorialBlock;
+  const sprite = TUTORIAL.sprite;
+  const image = getImage(sprite.path);
+  if (image) {
+    ctx.drawImage(image, Math.round(x + sprite.offsetX), Math.round(y + sprite.offsetY), sprite.width, sprite.height);
+    return;
+  }
   ctx.fillStyle = TUTORIAL.blockColor;
   ctx.fillRect(x, y, width, height);
   ctx.strokeStyle = TUTORIAL.blockEdgeColor;
@@ -2183,7 +2189,12 @@ function drawPickups(ctx) {
     const sprite = PICKUP.sprites[pickup.outfit];
     const image = sprite && getImage(sprite.path);
     if (sprite) {
-      if (image) ctx.drawImage(image, Math.round(pickup.x), Math.round(pickup.y), pickup.width, pickup.height);
+      if (image) {
+        const width = sprite.drawWidth ?? pickup.width;
+        const height = sprite.drawHeight ?? pickup.height;
+        ctx.drawImage(image, Math.round(pickup.x + (pickup.width - width) / 2),
+          Math.round(pickup.y + pickup.height - height), width, height);
+      }
       continue;
     }
     ctx.fillStyle = PICKUP.colors[pickup.outfit];
