@@ -829,6 +829,8 @@ export const LEVEL = [
     ],
     round3Cards: ['green', 'red', 'red', 'yellow', 'green', 'yellow', 'red', 'green', 'yellow', 'red'], // top first
   },
+  // Large authored stadium behind the Columbia traversal and first helmet.
+  { type: 'landmark', landmark: 'usa-stadium', x: SECTION_USA_X + 1500, parallax: 1 },
   { type: 'checkpoint', x: CHECKPOINT_USA_X },
   { type: 'thought-trigger', x: USA_THOUGHT_ARRIVAL_X, text: USA_THOUGHTS.arrival.text, duration: USA_THOUGHTS.arrival.duration },
   { type: 'thought-trigger', x: USA_THOUGHT_EXPERIENCE_X, text: USA_THOUGHTS.experience.text, duration: USA_THOUGHTS.experience.duration },

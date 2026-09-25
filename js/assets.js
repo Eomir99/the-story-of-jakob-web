@@ -21,6 +21,7 @@ export const MANIFEST = [
   { path: 'assets/backgrounds/clinic-desk.webp' },
   { path: 'assets/backgrounds/clinic-ground.webp' },
   { path: 'assets/backgrounds/usa-far.webp' },
+  { path: 'assets/backgrounds/usa-stadium.webp' },
   { path: 'assets/backgrounds/usa-mid-columbia.webp' },
   { path: 'assets/backgrounds/usa-mid-campus.webp' },
   { path: 'assets/backgrounds/world-ground-v2.webp' },

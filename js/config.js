@@ -319,6 +319,8 @@ export const LANDMARK = {
   // studentmössa celebration is over.
   afterUtspringFadeIn: 0.8,
   types: {
+    // Columbia stadium: almost two screens wide, rooted on the world floor.
+    'usa-stadium': { path: 'assets/backgrounds/usa-stadium.webp', colorMode: 'full-color', width: 2400, height: 835, baselineY: 675, alpha: 1 },
     // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
     // background". Never abbreviated on first appearance.
     // v3: the row of UF stalls with Candell UF's awards screen
