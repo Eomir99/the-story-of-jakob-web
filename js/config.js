@@ -1635,6 +1635,35 @@ export const GRADUATION = {
   // what normally removes them.
   projectileLifetime: 6, // s
 
+  // Visuals only: native crops retain their aspect ratio and share a floor
+  // anchor. Scroll/rubble PNGs are already authored facing left.
+  hazardArt: {
+    book: { path: 'assets/bosses/graduation-book.png', height: 46 },
+    bolt: { path: 'assets/bosses/graduation-scroll.png', height: 23 },
+    wave: {
+      paths: [
+        'assets/bosses/graduation-shockwave-1.png',
+        'assets/bosses/graduation-shockwave-2.png',
+        'assets/bosses/graduation-shockwave-3.png',
+      ],
+      sequence: [0, 1, 2, 1],
+      frameDuration: 0.09, // s per rubble pose; simulation time, never wall time
+      scale: 0.32, // common native-pixel scale; no frame-by-frame stretching
+    },
+    pillar: {
+      paths: [
+        'assets/bosses/graduation-pillar-1.png',
+        'assets/bosses/graduation-pillar-2.png',
+        'assets/bosses/graduation-pillar-3.png',
+      ],
+      scale: 0.42, // full pillar 139px tall; leaves a visible gap between eruptions
+      // Frame 3 appears before full collision height; damage still follows
+      // the unchanged continuous rise/hold/slam curve.
+      riseFrameEnds: [0.25, 0.55],
+      fallFrameEnds: [0.45, 0.75],
+    },
+  },
+
   // The abilities, as data. Every one has a telegraphDuration inside the
   // required 0.8-1.0s (checked at load, bosses.js) -- the wind-up that
   // the ready and wind-up poses play over -- and a cooldown after it goes

@@ -584,12 +584,34 @@ export function damageGraduationBoss(boss, amount) {
   }
 }
 
-// Graduation's projectiles, drawn by shape (game.js drawProjectiles hands
-// them here first). Plain canvas shapes: there is no projectile art for
-// this boss. Every one keeps the hazard rim.
+// Graduation's authored projectile art. Existing shapes remain a loading
+// fallback; neither drawing path changes projectile movement or hitboxes.
 export function drawGraduationProjectile(ctx, projectile, x, y) {
   const shape = projectile.graduationShape;
   if (!shape) return false;
+  const art = GRADUATION.hazardArt[shape];
+  if (art) {
+    const age = GRADUATION.projectileLifetime - projectile.life;
+    const frame = shape === 'wave'
+      ? art.sequence[Math.floor(Math.max(0, age) / art.frameDuration) % art.sequence.length]
+      : null;
+    const image = getImage(frame === null ? art.path : art.paths[frame]);
+    if (image) {
+      const scale = art.scale ?? art.height / image.height;
+      const width = Math.round(image.width * scale);
+      const height = Math.round(image.height * scale);
+      const left = Math.round(x + projectile.width / 2 - width / 2);
+      const top = shape === 'wave'
+        ? Math.round(y + projectile.height) - height
+        : Math.round(y + projectile.height / 2 - height / 2);
+      ctx.save();
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(image, left, top, width, height);
+      ctx.restore();
+      return true;
+    }
+  }
+
   // Drawn larger than the hitbox, around its centre (visualScale): a
   // player who sees the edge of the drawing is only ever hit by its core,
   // never the other way round -- same direction as the golem's art.
@@ -722,6 +744,28 @@ function drawSlabWarning(ctx, slab, ability) {
 // A risen slab: a stone block standing out of the floor, height px tall,
 // with the hazard colour along its top edge and the usual hazard rim.
 function drawSlab(ctx, slab, height, ability) {
+  const art = GRADUATION.hazardArt.pillar;
+  const elapsed = slab.age - ability.telegraphDuration;
+  let frame = 2;
+  if (elapsed < ability.riseDuration) {
+    const progress = elapsed / ability.riseDuration;
+    frame = progress < art.riseFrameEnds[0] ? 0 : progress < art.riseFrameEnds[1] ? 1 : 2;
+  } else if (elapsed >= ability.riseDuration + ability.holdDuration) {
+    const progress = (elapsed - ability.riseDuration - ability.holdDuration) / ability.slamDuration;
+    frame = progress < art.fallFrameEnds[0] ? 2 : progress < art.fallFrameEnds[1] ? 1 : 0;
+  }
+  const image = getImage(art.paths[frame]);
+  if (image) {
+    const width = Math.round(image.width * art.scale);
+    const drawHeight = Math.round(image.height * art.scale);
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(image, Math.round(slab.x + slab.width / 2 - width / 2),
+      Math.round(WORLD.groundY) - drawHeight, width, drawHeight);
+    ctx.restore();
+    return;
+  }
+
   const x = Math.round(slab.x);
   const y = Math.round(WORLD.groundY - height);
   const h = Math.round(height);
