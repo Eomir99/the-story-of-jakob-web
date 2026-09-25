@@ -5,6 +5,11 @@
 // manifest works locally and on GitHub Pages.
 
 export const MANIFEST = [
+  { path: 'assets/backgrounds/tram-crates-double.webp' },
+  { path: 'assets/backgrounds/tram-crate-single.webp' },
+  { path: 'assets/backgrounds/goteborg-tram.webp' },
+  { path: 'assets/backgrounds/ai-project.webp' },
+  { path: 'assets/backgrounds/harbour-crane.webp' },
   { path: 'assets/backgrounds/lund-town-far.webp' },
   { path: 'assets/backgrounds/lund-town-mid.webp' },
   { path: 'assets/backgrounds/polhem-school-mid.webp' },

@@ -30,7 +30,7 @@
 // together, then a quiet stretch, then one on a platform) rather than
 // landing on a steady rhythm, which would read as filler.
 
-import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, UF_THOUGHT, USA_THOUGHTS, STAIRCASE_THOUGHT, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
+import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, AI_PROJECT_THOUGHT, GOTEBORG_TRAVERSAL, UF_THOUGHT, USA_THOUGHTS, USA_STADIUM_CAMERA, STAIRCASE_THOUGHT, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
 
 const SPAWN_X = 120;
 
@@ -179,26 +179,26 @@ const UTSPRING_CLOUDS = [
 
 const PLATFORM_C_X = MATHBOOK_GROUND_B_X + 460; // 7230 -- last ordinary jump before the climb
 
-// --- Göteborg (6,900px: the end of the utspring to the Golem's line) -----
-// Shortened again from 9,200px (author feedback: still too long), and four
-// maths books added so the stretch isn't empty running: one on each high
-// platform (E, G) and a pair on the ground between the two clusters.
-// Level-compression pass: this section was 18,400px, almost exactly half of
-// which was one uninterrupted "quiet stretch" between platforms E and F
-// (9,500px of empty running -- more than the whole Lund section). Halving
-// the section means cutting that gap down, not removing any enemy,
-// platform or the approach to the Research Golem building. Every beat that
-// existed before (both platform clusters, the quiet breather between them,
-// the approach comic and activation line) is still here, just closer
-// together. All four platforms keep their original relative clustering
-// (D+E close together, F+G close together) -- only the long gap shrank.
-const PLATFORM_D_X = UTSPRING_END_X + 1000; // 11120
-const PLATFORM_E_X = PLATFORM_D_X + 900; // 12020 -- clustered with D, carries a book
-const GOTEBORG_MATHBOOK_A_X = PLATFORM_E_X + 1100; // 13120 -- ground
-const GOTEBORG_MATHBOOK_B_X = GOTEBORG_MATHBOOK_A_X + 800; // 13920 -- ground, paired with A
-const PLATFORM_F_X = PLATFORM_E_X + 2600; // 14620 -- after the ground pair (was 4,200 of empty running)
-const PLATFORM_G_X = PLATFORM_F_X + 900; // 15520 -- clustered with F, carries a book
-const GOLEM_COMIC_X = PLATFORM_G_X + 1500; // 17020 -- comic-trigger spacing only; the background boundary sits at GOLEM_ACTIVATION_X (see SECTION_HANDELS_X)
+// --- Göteborg: unchanged city boundary 10,720 -> 17,520 ----------------
+// Density pass: an optional raised route by the tram, AI workbench in the
+// middle gap, and the harbour cluster before the quiet façade approach.
+// Keep the boss anchor independent of platform placement.
+const TRAM_X = 11900;
+const DOUBLE_CRATES_X = TRAM_X - 300;
+const SINGLE_CRATE_X = TRAM_X + LANDMARK.types['goteborg-tram'].width + 60;
+const AI_STAND_X = 14300;
+const CRANE_X = 15520; // 720px right: 1.25 times its 576px display width
+// One authored camera beat, not a general camera-zone system.
+export const GOTEBORG_CRANE_VIEW = {
+  xStart: CRANE_X - 800,
+  // Return to normal one double-crate width beyond the arm's right edge.
+  xEnd: CRANE_X + LANDMARK.types['harbour-crane'].width + LANDMARK.types['tram-crates-double'].width,
+};
+const GOTEBORG_MATHBOOK_A_X = 13400;
+const GOTEBORG_MATHBOOK_B_X = 15120;
+const PLATFORM_F_X = 15620;
+const PLATFORM_G_X = 15920;
+const GOLEM_COMIC_X = UTSPRING_END_X + 6900; // 17020, unchanged
 const GOLEM_ACTIVATION_X = GOLEM_COMIC_X + 500; // 17520 = UTSPRING_END_X + 7,400 (6,900 section + 500 comic-to-activation)
 // Also the Research Golem venue's own entry line (RESEARCH_GOLEM_ENTRY_X
 // below): the line the scripted approach walk ends exactly on, where the
@@ -334,12 +334,9 @@ const SECTION_USA_X = SECTION_CLINIC_X + CLINIC_LENGTH; // 28331
 // A death anywhere in USA resumes here, not back at the Research Golem's
 // suit pickup (the last checkpoint before it).
 const CHECKPOINT_USA_X = SECTION_USA_X + 100;
-// Jakob's USA thoughts (config.js USA_THOUGHTS): the first soon after
-// arriving, the second placed one bubble's reading time of walking later
-// (duration * PLAYER.moveSpeed, plus a beat) so it follows as the first
-// fades instead of cutting it off.
-const USA_THOUGHT_ARRIVAL_X = SECTION_USA_X + 250;
-const USA_THOUGHT_EXPERIENCE_X = USA_THOUGHT_ARRIVAL_X + USA_THOUGHTS.arrival.duration * PLAYER.moveSpeed + 150;
+// The first thought lands as the stadium camera starts pulling back.
+const USA_STADIUM_X = SECTION_USA_X + 1500;
+const USA_THOUGHT_STADIUM_X = USA_STADIUM_X - USA_STADIUM_CAMERA.thoughtLead;
 const PLATFORM_J_X = SECTION_USA_X + 1200; // 29531
 // The football helmets (USA, exchange semester) need open ground to
 // charge, not a small elevated platform, so they stand directly on the
@@ -350,11 +347,8 @@ const USA_HELMET_X = SECTION_USA_X + 3200; // 31531
 const PLATFORM_K_X = USA_HELMET_X + 1600; // 33131
 const PLATFORM_L_X = PLATFORM_K_X + 900; // 34031 -- clustered with K
 const USA_HELMET_2_X = PLATFORM_L_X + 800; // 34831
-// The football thought fires once the second helmet is on screen: walking
-// right, the screen shows ~480px ahead of Jakob (config.js
-// ENEMY_HELMET.windUpRange), so 420px short of its left edge has the whole
-// helmet in view -- just before it can wind up (380px, centre to centre).
-const USA_THOUGHT_FOOTBALL_X = USA_HELMET_2_X - 420;
+// Business-school thought on the later USA walk, before the second helmet.
+const USA_THOUGHT_BUSINESS_X = USA_HELMET_2_X - 420;
 const SECTION_PORTAL_HAGA_X = PLATFORM_L_X + 1400; // 35431 -- where USA ends
 
 // --- Haga: the Graduation portal lead-in (~1,500px) ------------------------
@@ -556,6 +550,13 @@ export const LEVEL = [
   // Passing the Gothenburg sign: Jakob's thought as Lund is left behind.
   // Never takes control (config.js GOTHENBURG_THOUGHT).
   { type: 'thought-trigger', x: SIGN_GOTHENBURG_X + LANDMARK.types['sign-gothenburg-arrow'].width / 2, text: GOTHENBURG_THOUGHT.text, duration: GOTHENBURG_THOUGHT.duration },
+  // New city props are world-plane scenery, using the existing renderer.
+  { type: 'landmark', landmark: 'goteborg-tram', x: TRAM_X, parallax: 1 },
+  { type: 'landmark', landmark: 'tram-crates-double', x: DOUBLE_CRATES_X, parallax: 1 },
+  { type: 'landmark', landmark: 'tram-crate-single', x: SINGLE_CRATE_X, parallax: 1 },
+  { type: 'landmark', landmark: 'ai-project', x: AI_STAND_X, parallax: 1 },
+  { type: 'thought-trigger', x: AI_STAND_X + 100, text: AI_PROJECT_THOUGHT.text, duration: AI_PROJECT_THOUGHT.duration },
+  { type: 'landmark', landmark: 'harbour-crane', x: CRANE_X, parallax: 1 },
   { type: 'landmark', landmark: 'departures-board', x: DEPARTURES_BOARD_X, parallax: 1 },
 
   // Research Golem venue art (AGENTS.md §6's boss-specific world-space
@@ -687,29 +688,28 @@ export const LEVEL = [
   // foot for nothing.)
   { type: 'checkpoint', x: UTSPRING_END_X },
 
-  { type: 'platform', x: PLATFORM_D_X, y: platformTop(CLEARANCE_LOW) },
-  { type: 'platform', x: PLATFORM_E_X, y: platformTop(CLEARANCE_HIGH) },
-  // Göteborg's maths books (shortening pass): one on each high platform,
-  // a pair on the ground between the two clusters.
+  // The tram and crates own solid collision, with no visible platform bars.
+  ...[
+    { x: TRAM_X, surface: GOTEBORG_TRAVERSAL.tram },
+    ...GOTEBORG_TRAVERSAL.doubleCrates.map(surface => ({ x: DOUBLE_CRATES_X, surface })),
+    { x: SINGLE_CRATE_X, surface: GOTEBORG_TRAVERSAL.singleCrate },
+  ].map(({ x, surface }) => ({
+    type: 'solid-scenery', x: x + surface.x,
+    y: WORLD.groundY - surface.clearance,
+    width: surface.width, height: surface.clearance,
+  })),
   {
-    type: 'enemy-mathbook',
-    x: PLATFORM_E_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
-    y: platformTop(CLEARANCE_HIGH) - ENEMY_MATHBOOK.height,
+    type: 'enemy-mathbook', x: TRAM_X + 626,
+    y: WORLD.groundY - GOTEBORG_TRAVERSAL.tram.clearance - ENEMY_MATHBOOK.height,
   },
   { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_A_X },
   { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_B_X },
-
-  // The Endless Inbox and the football helmet used to stand here. Task
-  // 6.8's section order puts the admin enemy in the Clinic and the
-  // football helmet in USA, both of which come AFTER the Research Golem,
-  // so both moved down this file. See the note on the section table.
-
-  { type: 'platform', x: PLATFORM_F_X, y: platformTop(CLEARANCE_LOW) },
-  { type: 'platform', x: PLATFORM_G_X, y: platformTop(CLEARANCE_HIGH) },
+  { type: 'platform', x: PLATFORM_F_X, y: platformTop(GOTEBORG_TRAVERSAL.lowClearance) },
+  { type: 'platform', x: PLATFORM_G_X, y: platformTop(GOTEBORG_TRAVERSAL.highClearance) },
   {
     type: 'enemy-mathbook',
     x: PLATFORM_G_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
-    y: platformTop(CLEARANCE_HIGH) - ENEMY_MATHBOOK.height,
+    y: platformTop(GOTEBORG_TRAVERSAL.highClearance) - ENEMY_MATHBOOK.height,
   },
 
   // Story beat 5 (AGENTS.md §3): the camera-reveal repair task's scripted
@@ -830,11 +830,10 @@ export const LEVEL = [
     round3Cards: ['green', 'red', 'red', 'yellow', 'green', 'yellow', 'red', 'green', 'yellow', 'red'], // top first
   },
   // Large authored stadium behind the Columbia traversal and first helmet.
-  { type: 'landmark', landmark: 'usa-stadium', x: SECTION_USA_X + 1500, parallax: 1 },
+  { type: 'landmark', landmark: 'usa-stadium', x: USA_STADIUM_X, parallax: 1 },
   { type: 'checkpoint', x: CHECKPOINT_USA_X },
-  { type: 'thought-trigger', x: USA_THOUGHT_ARRIVAL_X, text: USA_THOUGHTS.arrival.text, duration: USA_THOUGHTS.arrival.duration },
-  { type: 'thought-trigger', x: USA_THOUGHT_EXPERIENCE_X, text: USA_THOUGHTS.experience.text, duration: USA_THOUGHTS.experience.duration },
-  { type: 'thought-trigger', x: USA_THOUGHT_FOOTBALL_X, text: USA_THOUGHTS.football.text, duration: USA_THOUGHTS.football.duration },
+  { type: 'thought-trigger', x: USA_THOUGHT_STADIUM_X, text: USA_THOUGHTS.stadium.text, duration: USA_THOUGHTS.stadium.duration },
+  { type: 'thought-trigger', x: USA_THOUGHT_BUSINESS_X, text: USA_THOUGHTS.business.text, duration: USA_THOUGHTS.business.duration },
   { type: 'platform', x: PLATFORM_J_X, y: platformTop(CLEARANCE_HIGH) },
 
   // The football helmets (USA, exchange semester): idle, telegraph,

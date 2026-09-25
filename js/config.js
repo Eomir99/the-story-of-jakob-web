@@ -321,6 +321,12 @@ export const LANDMARK = {
   types: {
     // Columbia stadium: almost two screens wide, rooted on the world floor.
     'usa-stadium': { path: 'assets/backgrounds/usa-stadium.webp', colorMode: 'full-color', width: 2400, height: 835, baselineY: 675, alpha: 1 },
+    // Göteborg props: generated alpha-cleaned PNGs, delivered losslessly.
+    'tram-crates-double': { path: 'assets/backgrounds/tram-crates-double.webp', colorMode: 'full-color', width: 240, height: 132, baselineY: 132, alpha: 1 },
+    'tram-crate-single': { path: 'assets/backgrounds/tram-crate-single.webp', colorMode: 'full-color', width: 145, height: 95, baselineY: 95, alpha: 1 },
+    'goteborg-tram': { path: 'assets/backgrounds/goteborg-tram.webp', colorMode: 'full-color', width: 900, height: 239, baselineY: 239, alpha: 1 },
+    'ai-project': { path: 'assets/backgrounds/ai-project.webp', colorMode: 'full-color', width: 350, height: 197.5, baselineY: 395, alpha: 1 },
+    'harbour-crane': { path: 'assets/backgrounds/harbour-crane.webp', colorMode: 'full-color', width: 576, height: 575, baselineY: 735, alpha: 1 },
     // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
     // background". Never abbreviated on first appearance.
     // v3: the row of UF stalls with Candell UF's awards screen
@@ -907,13 +913,10 @@ export const UF_THOUGHT = {
   duration: 3.6, // s on screen
 };
 
-// Jakob's thoughts in USA (level.js 'thought-trigger'): two in a row just
-// after arriving, then one as the second football helmet comes into view.
-// Placeholder copy -- author-owned (AGENTS.md §10), rewrite freely.
+// Jakob's USA thoughts: the stadium reveal, then the business-school beat.
 export const USA_THOUGHTS = {
-  arrival: { text: 'Everything really is bigger in America. Especially the portions.', duration: 3.2 },
-  experience: { text: 'Columbia, South Carolina: a great time, and an invaluable experience.', duration: 3.6 },
-  football: { text: 'American football: a fun spectacle… but they really gotta learn to pick up the pace.', duration: 3.8 },
+  stadium: { text: 'Everything really is bigger in the USA. A college stadium is larger than Sweden’s biggest arena.', duration: 5.2 },
+  business: { text: 'Darla Moore School of Business: No. 1 in international business in the US. I earned a 4.0 GPA there. Not too bad.', duration: 6.0 },
 };
 
 // Jakob's thought on the walk up to the utspring staircase (level.js
@@ -921,6 +924,39 @@ export const USA_THOUGHTS = {
 export const STAIRCASE_THOUGHT = {
   text: 'Time flies, let’s become a real adult!!',
   duration: 3.0, // s on screen
+};
+
+// Göteborg dressing: author-owned placeholder copy, replace here when supplied.
+export const AI_PROJECT_THOUGHT = {
+  text: 'AI project — my experiments with AI. Details coming soon.',
+  duration: 3.6,
+};
+
+// Solid surfaces measured against the supplied Göteborg artwork.
+// x is local to each sprite; clearance is height above the ground.
+export const GOTEBORG_TRAVERSAL = {
+  lowClearance: 90,
+  highClearance: 130,
+  tram: { x: 10, width: 880, clearance: 224 },
+  doubleCrates: [
+    { x: 16, width: 116, clearance: 100 },
+    { x: 78, width: 141, clearance: 128 },
+  ],
+  singleCrate: { x: 14, width: 113, clearance: 92 },
+};
+
+export const GOTEBORG_CRANE_CAMERA = {
+  zoom: 0.72,
+  blendDistance: 450,
+  centerAboveGround: 280,
+};
+
+// Pull back and raise the view while Jakob passes Columbia's stadium.
+export const USA_STADIUM_CAMERA = {
+  zoom: 0.68,
+  blendDistance: 550, // px to ease in before the facade and out after it
+  centerAboveGround: 430, // px; keeps the roof visible during the reveal
+  thoughtLead: 300, // px before the facade, as the pull-back becomes visible
 };
 
 export const GOTHENBURG_THOUGHT = {

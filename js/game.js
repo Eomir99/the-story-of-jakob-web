@@ -1,6 +1,6 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, ENEMY_MATHBOOK } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, GOTEBORG_CRANE_CAMERA, USA_STADIUM_CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, ENEMY_MATHBOOK } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { getImage } from './assets.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
@@ -26,7 +26,7 @@ import {
   clearGraduationHazards,
   graduationSlabHitsPlayer,
 } from './bosses.js';
-import { LEVEL, LEVEL_BOUNDS, TUTORIAL_END_X, DEBUG_START_X, entryY } from './level.js';
+import { LEVEL, LEVEL_BOUNDS, TUTORIAL_END_X, DEBUG_START_X, GOTEBORG_CRANE_VIEW, entryY } from './level.js';
 import {
   createReception,
   skipReception,
@@ -122,6 +122,7 @@ let boss;
 let graduationBoss;
 let pickups;
 let platforms; // task C: { x, y, width, height }, one-way landable rectangles
+let solidScenery; // authored tram/crate collision; artwork is rendered as landmarks
 let tutorialBlock; // the single solid jump block in the opening
 let stairSurface; // [[x, y], ...] the utspring staircase's walking line (level.js 'stair-surface'), or null
 let checkpoints; // sorted ascending by x
@@ -895,6 +896,7 @@ function loadLevel() {
   pickups = [];
   platforms = [];
   tutorialBlock = null;
+  solidScenery = [];
   stairSurface = null;
   utspringTrigger = null;
   utspringClouds = [];
@@ -943,6 +945,8 @@ function loadLevel() {
       graduationArenaFrame = entry.arenaFrame ?? null;
     } else if (entry.type === 'tutorial-block') {
       tutorialBlock = { x: entry.x, y, width: TUTORIAL.blockWidth, height: TUTORIAL.blockHeight };
+    } else if (entry.type === 'solid-scenery') {
+      solidScenery.push({ x: entry.x, y, width: entry.width, height: entry.height });
     } else if (entry.type === 'stair-surface') {
       stairSurface = entry.points;
     } else if (entry.type === 'platform') {
@@ -1116,11 +1120,12 @@ function step(dt) {
   updateResearchGolemExitWalk(dt);
   updateReception(reception, dt, player);
   const extraPlatforms = receptionPlatforms(reception);
-  const walkablePlatforms = tutorialBlock ? platforms.concat(tutorialBlock) : platforms;
+  const walkablePlatforms = platforms.concat(solidScenery, tutorialBlock ? [tutorialBlock] : []);
   const previousPlayerX = player.x;
+  const previousPlayerY = player.y;
   const wasGrounded = player.onGround;
   const spawned = updatePlayer(player, dt, spawnPoint, extraPlatforms ? walkablePlatforms.concat(extraPlatforms) : walkablePlatforms);
-  applyTutorialBlock(previousPlayerX);
+  applySceneryCollision(previousPlayerX, previousPlayerY);
   applyStairSurface(wasGrounded);
   updateThoughtTriggers(dt);
   setTutorialVisible(player.x < TUTORIAL_END_X);
@@ -1201,14 +1206,21 @@ function handleDeathTransition() {
 // Bosses stand still and are solid walls (solidWall in their config): the
 // player can't walk behind either one, so both fights always happen with
 // the player facing right, by design.
-function applyTutorialBlock(previousPlayerX) {
-  if (!tutorialBlock || player.dead || !aabbOverlap(player, tutorialBlock)) return;
-  // The top is already handled as a one-way platform in updatePlayer. Only
-  // stop a side crossing while the player's feet are below that top.
-  if (previousPlayerX + player.width <= tutorialBlock.x && player.vx > 0) {
-    player.x = tutorialBlock.x - player.width;
-  } else if (previousPlayerX >= tutorialBlock.x + tutorialBlock.width && player.vx < 0) {
-    player.x = tutorialBlock.x + tutorialBlock.width;
+function applySceneryCollision(previousPlayerX, previousPlayerY) {
+  if (player.dead) return;
+  const blocks = tutorialBlock ? solidScenery.concat(tutorialBlock) : solidScenery;
+  for (const block of blocks) {
+    if (!aabbOverlap(player, block)) continue;
+    // Landing is already resolved by updatePlayer. Prevent side/underside
+    // entry as well, so the visible tram and crates are genuinely solid.
+    if (previousPlayerX + player.width <= block.x && player.vx > 0) {
+      player.x = block.x - player.width;
+    } else if (previousPlayerX >= block.x + block.width && player.vx < 0) {
+      player.x = block.x + block.width;
+    } else if (previousPlayerY >= block.y + block.height && player.vy < 0) {
+      player.y = block.y + block.height;
+      player.vy = 0;
+    }
   }
 }
 
@@ -1538,6 +1550,22 @@ function updateCamera(dt) {
   else if (dy > halfDeadzoneH) desiredY = camera.y + (dy - halfDeadzoneH);
   else if (dy < -halfDeadzoneH) desiredY = camera.y + (dy + halfDeadzoneH);
 
+  // Pull back only around the decorative crane; normal boss framing wins.
+  const craneBlend = !framing && arenaLockCameraX === null ? Math.max(0, Math.min(1,
+    (player.x - GOTEBORG_CRANE_VIEW.xStart) / GOTEBORG_CRANE_CAMERA.blendDistance,
+    (GOTEBORG_CRANE_VIEW.xEnd - player.x) / GOTEBORG_CRANE_CAMERA.blendDistance)) : 0;
+  const craneY = WORLD.groundY - GOTEBORG_CRANE_CAMERA.centerAboveGround - CANVAS.height / 2;
+  desiredY += (craneY - desiredY) * craneBlend;
+
+  const stadium = landmarks.find((placement) => placement.landmark === 'usa-stadium');
+  const stadiumBlend = !framing && arenaLockCameraX === null && stadium
+    ? Math.max(0, Math.min(1,
+      (player.x - (stadium.x - USA_STADIUM_CAMERA.blendDistance)) / USA_STADIUM_CAMERA.blendDistance,
+      (stadium.x + LANDMARK.types['usa-stadium'].width + USA_STADIUM_CAMERA.blendDistance - player.x) / USA_STADIUM_CAMERA.blendDistance))
+    : 0;
+  const stadiumY = WORLD.groundY - USA_STADIUM_CAMERA.centerAboveGround - CANVAS.height / 2;
+  desiredY += (stadiumY - desiredY) * stadiumBlend;
+
   const ease = 1 - Math.exp(-CAMERA.smoothing * dt);
   camera.x += (desiredX - camera.x) * ease;
   camera.y += (desiredY - camera.y) * ease;
@@ -1547,6 +1575,8 @@ function updateCamera(dt) {
   // camera.zoom, so this is one target value, eased by the same smoothing
   // every other camera motion uses.
   let targetZoom = isUtspringRunning() ? STAIRCASE.zoomOut : 1;
+  targetZoom += (GOTEBORG_CRANE_CAMERA.zoom - targetZoom) * craneBlend;
+  targetZoom += (USA_STADIUM_CAMERA.zoom - targetZoom) * stadiumBlend;
   if (framing) targetZoom = framing.zoom;
   const zoomEase = 1 - Math.exp(-CAMERA.zoomSmoothing * dt);
   camera.zoom += (targetZoom - camera.zoom) * zoomEase;
