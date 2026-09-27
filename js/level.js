@@ -30,18 +30,9 @@
 // together, then a quiet stretch, then one on a platform) rather than
 // landing on a steady rhythm, which would read as filler.
 
-import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, AI_PROJECT_THOUGHT, GOTEBORG_TRAVERSAL, UF_THOUGHT, USA_THOUGHTS, USA_STADIUM_CAMERA, STAIRCASE_THOUGHT, LANDMARK, PICKUP, PLATFORM, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
+import { CANVAS, WORLD, PLAYER, ENEMY_MATHBOOK, ENEMY_INBOX, ENEMY_HELMET, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, GRADUATION_ENTRANCE, GOTHENBURG_THOUGHT, HANDELS_THOUGHT, AI_PROJECT_THOUGHT, GOTEBORG_TRAVERSAL, UF_THOUGHT, USA_THOUGHTS, USA_STADIUM_CAMERA, STAIRCASE_THOUGHT, LANDMARK, PICKUP, STAIRCASE, TUTORIAL, BOSS_APPROACH } from './config.js';
 
 const SPAWN_X = 120;
-
-// Two standard platform heights (task C: "fixed standard dimensions",
-// AGENTS.md §5) -- variety without inventing a size per placement. Both
-// comfortably under the player's own max jump apex (~153px, from
-// PLAYER.jumpVelocity/WORLD.gravity), so every platform is reachable with
-// room to spare -- "generous, not precise" (PLAN.md task C).
-const CLEARANCE_LOW = 90;
-const CLEARANCE_HIGH = 130;
-const platformTop = (clearance) => WORLD.groundY - clearance;
 
 // Boss arenas are sized from their own art (door/portal to where the boss
 // stands), not from a travel-time target. Both stay flat (task C) -- no
@@ -55,21 +46,21 @@ const platformTop = (clearance) => WORLD.groundY - clearance;
 //   1  MATHBOOK_1_X             after a safe movement/jump stretch. This is
 //                               the shooting lesson; it cannot be lost.
 //   -  MATHBOOK_GROUND_A_X      on the ground after the first two jumps.
-//   2  MATHBOOK_2_PLATFORM_X    on a ledge -- jump-timed shot, or walk under.
-//   3  MATHBOOK_3_PLATFORM_X    on a ledge just past the UF stand.
+//   2  MATHBOOK_2_X             on the ground.
+//   3  MATHBOOK_3_X             on the ground just past the UF stand.
 //   -  MATHBOOK_GROUND_B_X      on the ground before the last jump and the
 //                               climb to the staircase.
 const TUTORIAL_BLOCK_X = 760; // soon after the intro, before any enemy
 const MATHBOOK_1_X = 1500; // the first shooting lesson
-const PLATFORM_A_X = 2450; // after the Lund arrow sign
-const PLATFORM_B_X = 2800; // clustered with A
+// Spacing anchor left from the removed jump platforms.
+const PLATFORM_B_X = 2800;
 const MATHBOOK_GROUND_A_X = PLATFORM_B_X + 700; // 3500
-const MATHBOOK_2_PLATFORM_X = PLATFORM_B_X + 1300; // 4100 -- carries the ledge book
+const MATHBOOK_2_X = PLATFORM_B_X + 1386; // 4186, where its ledge used to be
 // The UF stand (UF_STAND_X, 1100px wide) stands between the ledge book and
 // the third book. Nothing gameplay sits in front of it: the gap's launch
 // platform that used to stand at 5400 is gone, and the third book's
 // platform stands just past the stand's right edge.
-const MATHBOOK_3_PLATFORM_X = 6150; // carries the third book, clear of the UF stand (ends 5980)
+const MATHBOOK_3_X = 6236; // clear of the UF stand (ends 5980)
 const MATHBOOK_GROUND_B_X = 6770;
 
 // Checkpoints (AGENTS.md §6: invisible checkpoints; polish-pass audit
@@ -126,7 +117,7 @@ const STAIR_TOP_Y = STAIR_SURFACE[1][1]; // the top landing
 //   360 * ((1 + 1.5) / 2) * 3.0 = 1,350px
 //
 // That carries the player down all four flights and on across the floor,
-// stopping in front of Polhemskolan (POLHEM_ART_X, below).
+// stopping in front of the ceremony truck (CEREMONY_TRUCK_X, below).
 const UTSPRING_RUN_LENGTH =
   PLAYER.moveSpeed * ((1 + STAIRCASE.speedRampMultiplier) / 2) * STAIRCASE.descentDuration; // 1350
 const STAIRCASE_START_X = STAIR_ART_X + 700; // 8770 -- where the descent starts
@@ -154,15 +145,20 @@ const UTSPRING_END_X = STAIRCASE_START_X + UTSPRING_RUN_LENGTH; // 10120 -- wher
 // after control returns -- the celebration and the run that ends it stay
 // visually Lund throughout, and Göteborg only starts revealing itself once
 // the player is moving through it again.
-const LUND_GOTEBORG_BACKGROUND_X = UTSPRING_END_X + 600; // 10720
+const LUND_GOTEBORG_BACKGROUND_X = UTSPRING_END_X + 900; // 11020
 const CHECKPOINT_AT_STAIRCASE_FOOT_X = STAIR_ART_X - 150; // 7920
 
 // Polhemskolan, the school the utspring runs out of (config.js
 // LANDMARK.types 'utspring-polhem'): placed on the floor line behind the
-// lower half of the staircase. Its left edge is tucked behind the stair
-// pillar at u ~870, so the cut-off tree line there never shows, and its
-// main building (local x ~1250) stands right behind where the run stops.
-const POLHEM_ART_X = STAIR_ART_X + 862; // 8932
+// staircase, its left edge tucked behind the stair so the cut-off tree line
+// there never shows. Its main building (local x ~1250) stands between the
+// foot of the staircase and the ceremony truck, so the truck never hides it.
+const POLHEM_ART_X = STAIR_ART_X + 300; // 8370
+// The banner centred over the staircase's top landing (u ~369-750).
+const UTSPRING_BANNER_X = STAIR_ART_X + 560 - LANDMARK.types['utspring-banner'].width / 2;
+// The student-flak truck, from the foot of the staircase: the run stops
+// in front of it.
+const CEREMONY_TRUCK_X = STAIR_ART_X + 1740; // 9810
 
 // The clouds over the descent, [centre x, height of the cloud's centre
 // above the floor]: one above each stretch of the staircase (u ~830, 1080,
@@ -177,27 +173,29 @@ const UTSPRING_CLOUDS = [
   [STAIR_ART_X + 1330, 285],
 ];
 
-const PLATFORM_C_X = MATHBOOK_GROUND_B_X + 460; // 7230 -- last ordinary jump before the climb
 
 // --- Göteborg: unchanged city boundary 10,720 -> 17,520 ----------------
 // Density pass: an optional raised route by the tram, AI workbench in the
 // middle gap, and the harbour cluster before the quiet façade approach.
 // Keep the boss anchor independent of platform placement.
-const TRAM_X = 11900;
+// Handelshögskolan first, then the raised route over the tram near the
+// end of the section (where the harbour crane used to stand), ending
+// before the Research Golem approach (~16,944).
+const HANDELS_X = 12100;
+const HANDELS_THOUGHT_X = HANDELS_X - 300; // just before running past it
+const TRAM_X = 15520;
 const DOUBLE_CRATES_X = TRAM_X - 300;
 const SINGLE_CRATE_X = TRAM_X + LANDMARK.types['goteborg-tram'].width + 60;
 const AI_STAND_X = 14300;
-const CRANE_X = 15520; // 720px right: 1.25 times its 576px display width
 // One authored camera beat, not a general camera-zone system.
-export const GOTEBORG_CRANE_VIEW = {
-  xStart: CRANE_X - 800,
-  // Return to normal one double-crate width beyond the arm's right edge.
-  xEnd: CRANE_X + LANDMARK.types['harbour-crane'].width + LANDMARK.types['tram-crates-double'].width,
+export const GOTEBORG_HANDELS_VIEW = {
+  xStart: HANDELS_X - 500,
+  xEnd: HANDELS_X + LANDMARK.types['handels'].width + 200,
 };
-const GOTEBORG_MATHBOOK_A_X = 13400;
+const GOTEBORG_MATHBOOK_A_X = 13850;
 const GOTEBORG_MATHBOOK_B_X = 15120;
-const PLATFORM_F_X = 15620;
-const PLATFORM_G_X = 15920;
+// A third spreadsheet in front of Handelshögskolan's right-hand wing.
+const GOTEBORG_MATHBOOK_C_X = HANDELS_X + 700; // 12800
 const GOLEM_COMIC_X = UTSPRING_END_X + 6900; // 17020, unchanged
 const GOLEM_ACTIVATION_X = GOLEM_COMIC_X + 500; // 17520 = UTSPRING_END_X + 7,400 (6,900 section + 500 comic-to-activation)
 // Also the Research Golem venue's own entry line (RESEARCH_GOLEM_ENTRY_X
@@ -271,8 +269,6 @@ const RESEARCH_GOLEM_REVEAL_CAMERA_X = GOLEM_ACTIVATION_X - (CANVAS.width - BOSS
 // gating always agree about where the venue ends -- no gap, no overlap.
 const SECTION_HAGA_X = RESEARCH_GOLEM_EXIT_X; // 24235
 const HAGA_LENGTH = 2048; // one background-strip tile width (BACKGROUND-ASSET-SPEC.md)
-const PLATFORM_H_X = SECTION_HAGA_X + 300; // pure traversal, no enemy (Haga stays short and empty)
-const PLATFORM_I_X = PLATFORM_H_X + 900; // clustered with H
 
 // Door-role repair task: the façade has two doors and they are not
 // interchangeable (AGENTS.md §3, task brief §11) -- the LARGE DOUBLE DOOR is
@@ -316,8 +312,7 @@ const CLINIC_LENGTH = RECEPTION_LEAD_IN + RECEPTION_ARENA_WIDTH + RECEPTION_RUN_
 // is on screen: walking right, the view's right edge runs ~530px ahead of
 // Jakob (half the canvas less half config.js CAMERA.deadzoneWidth), so 560px
 // short of the Clinic neither its floor nor its background has appeared
-// yet. It is also clear of Haga's last platform (PLATFORM_I_X, ending 628px
-// short). Jakob stops in front of the red-cross sign and thinks; then, as
+// yet. Jakob stops in front of the red-cross sign and thinks; then, as
 // the camera pulls out to frame the arena, he walks himself in to
 // RECEPTION_WALK_IN_X -- where he always got control -- and the camera
 // crossing into the Clinic is what fades the hospital in (config.js
@@ -337,15 +332,14 @@ const CHECKPOINT_USA_X = SECTION_USA_X + 100;
 // The first thought lands as the stadium camera starts pulling back.
 const USA_STADIUM_X = SECTION_USA_X + 1500;
 const USA_THOUGHT_STADIUM_X = USA_STADIUM_X - USA_STADIUM_CAMERA.thoughtLead;
-const PLATFORM_J_X = SECTION_USA_X + 1200; // 29531
 // The football helmets (USA, exchange semester) need open ground to
 // charge, not a small elevated platform, so they stand directly on the
 // ground -- fitting for the "usa stadium" section's open field look
 // (config.js BACKGROUNDS). Two of them: one mid-field, one after the K/L
 // platforms, which give a place to jump clear of its charge.
 const USA_HELMET_X = SECTION_USA_X + 3200; // 31531
-const PLATFORM_K_X = USA_HELMET_X + 1600; // 33131
-const PLATFORM_L_X = PLATFORM_K_X + 900; // 34031 -- clustered with K
+// Spacing anchor left from the removed jump platforms.
+const PLATFORM_L_X = USA_HELMET_X + 2500; // 34031
 const USA_HELMET_2_X = PLATFORM_L_X + 800; // 34831
 // Business-school thought on the later USA walk, before the second helmet.
 const USA_THOUGHT_BUSINESS_X = USA_HELMET_2_X - 420;
@@ -413,7 +407,8 @@ const GRADUATION_ARENA_FRAME = {
 };
 
 const GRADUATION_X = GRADUATION_ARENA_IMAGE_X + GRADUATION_ARENA_BOSS_LOCAL_X;
-const ARMOUR_X = GRADUATION_X + GRADUATION.width + 80; // local 1580, inside the frame
+// On the player's side of the boss, so its drop (PICKUP.drop) lands in view.
+const ARMOUR_X = GRADUATION_X - 160;
 
 // --- Background sections ----------------------------------------------------
 // Ten sections, in level order (level-compression pass: was eight, split by
@@ -482,7 +477,7 @@ const SECTION_HANDELS_X = GOLEM_ACTIVATION_X; // 22420 -- matches researchGolemI
 // whole portal approach and only gives way at the instant the arena's own
 // interior state (game.js graduationInterior()) turns true.
 const SECTION_GU_X = GRADUATION_ACTIVATION_X; // 36907
-const LEVEL_END_X = ARMOUR_X + 600; // 37471
+const LEVEL_END_X = GRADUATION_X + GRADUATION.width + 680; // 37471
 
 // Landmark placements. Parallax is per placement, not per landmark: how
 // far away a thing reads is a layout decision, and the same object could
@@ -493,12 +488,12 @@ const SIGN_LUND_ARROW_X = 1950; // after the movement, jump and shoot lessons
 export const TUTORIAL_END_X = SIGN_LUND_ARROW_X;
 // Centred on the switch from the distant Lund skyline to the Lund streets.
 const SIGN_WELCOME_LUND_X = SECTION_POLHEM_X - LANDMARK.types['sign-welcome-lund'].width / 2;
-// Just after the utspring ends, before the Göteborg backdrop starts to
-// fade in (BACKGROUND.blendBandWidth / 2 = 200px before its boundary).
+// A short walk past the ceremony truck, before the Göteborg backdrop
+// starts to fade in (BACKGROUND.blendBandWidth / 2 = 200px before its boundary).
 // The zoomed-out celebration camera can see this spot, so the sign is
 // hidden until the celebration is over and then fades in
 // (showAfterUtspring below, config.js LANDMARK.afterUtspringFadeIn).
-const SIGN_GOTHENBURG_X = UTSPRING_END_X + 250;
+const SIGN_GOTHENBURG_X = CEREMONY_TRUCK_X + LANDMARK.types['ceremony-truck'].width + 220; // 10810
 // Hanging over the way out of the Clinic, straddling the change to USA and
 // clear of the reception arena's right edge.
 const DEPARTURES_BOARD_X = SECTION_USA_X - 480;
@@ -526,12 +521,12 @@ export const LEVEL = [
   { type: 'background-section', name: 'Lund — town', xStart: 0, xEnd: SECTION_POLHEM_X, background: 'lund-town', music: 'exploration' },
   { type: 'background-section', name: 'Polhem — the school', xStart: SECTION_POLHEM_X, xEnd: SECTION_LUND_RETURN_X, background: 'polhem-school', music: 'exploration' },
   { type: 'background-section', name: 'Lund — the utspring', xStart: SECTION_LUND_RETURN_X, xEnd: LUND_GOTEBORG_BACKGROUND_X, background: 'lund-utspring', music: 'exploration' },
-  { type: 'background-section', name: 'Göteborg — the city', xStart: LUND_GOTEBORG_BACKGROUND_X, xEnd: SECTION_HANDELS_X, background: 'goteborg-city', music: 'exploration' },
-  { type: 'background-section', name: 'Handels — Golem arena', xStart: SECTION_HANDELS_X, xEnd: SECTION_HAGA_X, background: 'handels-interior', music: 'exploration' },
-  { type: 'background-section', name: 'Haga — Göteborg exterior', xStart: SECTION_HAGA_X, xEnd: SECTION_CLINIC_X, background: 'goteborg-haga', music: 'exploration' },
+  { type: 'background-section', name: 'Göteborg — the city', xStart: LUND_GOTEBORG_BACKGROUND_X, xEnd: SECTION_HANDELS_X, background: 'goteborg-city', music: 'gothenburg' },
+  { type: 'background-section', name: 'Handels — Golem arena', xStart: SECTION_HANDELS_X, xEnd: SECTION_HAGA_X, background: 'handels-interior', music: 'gothenburg' },
+  { type: 'background-section', name: 'Haga — Göteborg exterior', xStart: SECTION_HAGA_X, xEnd: SECTION_CLINIC_X, background: 'goteborg-haga', music: 'gothenburg' },
   { type: 'background-section', name: 'Clinic — reception', xStart: SECTION_CLINIC_X, xEnd: SECTION_USA_X, background: 'clinic-reception', music: 'clinic', ground: 'clinicGroundTexture' },
   { type: 'background-section', name: 'USA — the stadium', xStart: SECTION_USA_X, xEnd: SECTION_PORTAL_HAGA_X, background: 'usa-stadium', music: 'usa' },
-  { type: 'background-section', name: 'Haga — portal lead-in', xStart: SECTION_PORTAL_HAGA_X, xEnd: SECTION_GU_X, background: 'goteborg-haga-portal', music: 'exploration' },
+  { type: 'background-section', name: 'Haga — portal lead-in', xStart: SECTION_PORTAL_HAGA_X, xEnd: SECTION_GU_X, background: 'goteborg-haga-portal', music: 'gothenburg' },
   { type: 'background-section', name: 'GU — Graduation arena', xStart: SECTION_GU_X, xEnd: LEVEL_END_X, background: 'gu-ceremony', music: 'graduation' },
 
   // Landmarks: one-off background objects at a single x, each scrolling
@@ -543,7 +538,9 @@ export const LEVEL = [
   // because the player stands on it, the school so its tucked-in left
   // edge stays behind the stair pillar at every camera position.
   { type: 'landmark', landmark: 'utspring-polhem', x: POLHEM_ART_X, parallax: 1 },
+  { type: 'landmark', landmark: 'utspring-banner', x: UTSPRING_BANNER_X, parallax: 1 },
   { type: 'landmark', landmark: 'utspring-staircase', x: STAIR_ART_X, parallax: 1 },
+  { type: 'landmark', landmark: 'ceremony-truck', x: CEREMONY_TRUCK_X, parallax: 1 },
   { type: 'landmark', landmark: 'sign-lund-arrow', x: SIGN_LUND_ARROW_X, parallax: 1 },
   { type: 'landmark', landmark: 'sign-welcome-lund', x: SIGN_WELCOME_LUND_X, parallax: 1 },
   { type: 'landmark', landmark: 'sign-gothenburg-arrow', x: SIGN_GOTHENBURG_X, parallax: 1, showAfterUtspring: true },
@@ -556,7 +553,8 @@ export const LEVEL = [
   { type: 'landmark', landmark: 'tram-crate-single', x: SINGLE_CRATE_X, parallax: 1 },
   { type: 'landmark', landmark: 'ai-project', x: AI_STAND_X, parallax: 1 },
   { type: 'thought-trigger', x: AI_STAND_X + 100, text: AI_PROJECT_THOUGHT.text, duration: AI_PROJECT_THOUGHT.duration },
-  { type: 'landmark', landmark: 'harbour-crane', x: CRANE_X, parallax: 1 },
+  { type: 'landmark', landmark: 'handels', x: HANDELS_X, parallax: 1 },
+  { type: 'thought-trigger', x: HANDELS_THOUGHT_X, text: HANDELS_THOUGHT.text, duration: HANDELS_THOUGHT.duration },
   { type: 'landmark', landmark: 'departures-board', x: DEPARTURES_BOARD_X, parallax: 1 },
 
   // Research Golem venue art (AGENTS.md §6's boss-specific world-space
@@ -591,7 +589,7 @@ export const LEVEL = [
 
   // The first stretch is safe movement, then a low solid block to jump.
   // The maths book follows at a distance as the shooting lesson.
-  { type: 'tutorial-block', x: TUTORIAL_BLOCK_X, y: WORLD.groundY - TUTORIAL.blockHeight },
+  { type: 'tutorial-block', x: TUTORIAL_BLOCK_X, y: WORLD.groundY - TUTORIAL.blockHeight, label: 'Jump over the box' },
 
   //   1  after the jump block. Standing still and taking a hit costs some
   //      health and nothing else; walking backwards avoids it entirely.
@@ -600,31 +598,18 @@ export const LEVEL = [
   //      placements below pick up the faster/tougher default tuning in
   //      config.js (task 1); this one keeps the old, gentler numbers as an
   //      explicit per-instance override so the tutorial never gets harder.
-  { type: 'enemy-mathbook', x: MATHBOOK_1_X, hp: 5, idleDuration: 6.2 },
+  // `label`: a tutorial caption above it until it is killed.
+  { type: 'enemy-mathbook', x: MATHBOOK_1_X, hp: 5, idleDuration: 6.2, label: 'Kill the math book' },
 
   // Audit finding A2: the tutorial encounter is cleared, so a death from
   // here on no longer walks all the way back to SPAWN_X.
   { type: 'checkpoint', x: CHECKPOINT_AFTER_MATHBOOK_1_X },
 
-  // Pure traversal platforms (task C: "force a jump"), breaking up the run
-  // to the ledge. Neither carries anything -- forcing the jump is the
-  // whole job.
-  { type: 'platform', x: PLATFORM_A_X, y: platformTop(CLEARANCE_LOW) },
-  { type: 'platform', x: PLATFORM_B_X, y: platformTop(CLEARANCE_HIGH) },
-
   // Filler book on the ground (Lund shortening pass).
   { type: 'enemy-mathbook', x: MATHBOOK_GROUND_A_X },
 
-  //   2  ledge. Contact-safe from the ground -- only killable with a
-  //      jump-timed shot or by climbing up (same height logic verified for
-  //      the claim phase, task 2.5). Optional: skip it, or take the skill
-  //      shot.
-  { type: 'platform', x: MATHBOOK_2_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
-  {
-    type: 'enemy-mathbook',
-    x: MATHBOOK_2_PLATFORM_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
-    y: platformTop(CLEARANCE_LOW) - ENEMY_MATHBOOK.height,
-  },
+  //   2  on the ground (it stood on a ledge until the platforms went).
+  { type: 'enemy-mathbook', x: MATHBOOK_2_X },
 
   // Audit finding A2: short of the gap jump, so a missed jump or a death
   // to the book on the far side never replays the ledge encounter too.
@@ -634,24 +619,16 @@ export const LEVEL = [
   // (config.js UF_THOUGHT). Placeholder copy -- author-owned.
   { type: 'thought-trigger', x: UF_STAND_X + 520, text: UF_THOUGHT.text, duration: UF_THOUGHT.duration },
 
-  //   3  on a ledge just past the UF stand: reached with one jump from the
-  //      ground, or skipped at ground level like the ledge.
-  { type: 'platform', x: MATHBOOK_3_PLATFORM_X, y: platformTop(CLEARANCE_LOW) },
-  {
-    type: 'enemy-mathbook',
-    x: MATHBOOK_3_PLATFORM_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
-    y: platformTop(CLEARANCE_LOW) - ENEMY_MATHBOOK.height,
-  },
+  //   3  on the ground just past the UF stand.
+  { type: 'enemy-mathbook', x: MATHBOOK_3_X },
 
   // Filler book on the ground before the last jump (Lund shortening pass).
   { type: 'enemy-mathbook', x: MATHBOOK_GROUND_B_X },
 
-  { type: 'platform', x: PLATFORM_C_X, y: platformTop(CLEARANCE_LOW) },
-
   { type: 'thought-trigger', x: STAIRCASE_THOUGHT_X, text: STAIRCASE_THOUGHT.text, duration: STAIRCASE_THOUGHT.duration },
 
   // The utspring (AGENTS.md §3, PLAN.md task 3.5). No enemy may ever be
-  // placed between PLATFORM_C_X and UTSPRING_END_X: this is the one
+  // placed between MATHBOOK_GROUND_B_X and UTSPRING_END_X: this is the one
   // moment in the game where the player is not fighting, and that is the
   // entire point of it.
   //
@@ -669,10 +646,11 @@ export const LEVEL = [
   // line is across that landing and this changes nothing; it stays as a
   // guard.
   // Audit finding A2: a death anywhere near the climb resumes at the foot
-  // of the staircase rather than back at PLATFORM_C_X.
+  // of the staircase rather than further back.
   { type: 'checkpoint', x: CHECKPOINT_AT_STAIRCASE_FOOT_X },
 
-  { type: 'utspring-trigger', x: UTSPRING_TAKEOVER_X, descentX: STAIRCASE_START_X, y: STAIR_TOP_Y },
+  // topX: the top of the climb, where the confetti and balloons start.
+  { type: 'utspring-trigger', x: UTSPRING_TAKEOVER_X, descentX: STAIRCASE_START_X, topX: STAIR_SURFACE[1][0], y: STAIR_TOP_Y },
 
   // What the Lund years were, written on clouds over the staircase. Each
   // one drifts in as the descent reaches it (game.js drawUtspringClouds)
@@ -698,19 +676,15 @@ export const LEVEL = [
     y: WORLD.groundY - surface.clearance,
     width: surface.width, height: surface.clearance,
   })),
+  // After the utspring the maths books wear spreadsheet art (config.js
+  // ENEMY_MATHBOOK.spreadsheetSkin); same enemy, same behaviour.
   {
-    type: 'enemy-mathbook', x: TRAM_X + 626,
+    type: 'enemy-mathbook', x: TRAM_X + 626, skin: 'spreadsheet',
     y: WORLD.groundY - GOTEBORG_TRAVERSAL.tram.clearance - ENEMY_MATHBOOK.height,
   },
-  { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_A_X },
-  { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_B_X },
-  { type: 'platform', x: PLATFORM_F_X, y: platformTop(GOTEBORG_TRAVERSAL.lowClearance) },
-  { type: 'platform', x: PLATFORM_G_X, y: platformTop(GOTEBORG_TRAVERSAL.highClearance) },
-  {
-    type: 'enemy-mathbook',
-    x: PLATFORM_G_X + (PLATFORM.width - ENEMY_MATHBOOK.width) / 2,
-    y: platformTop(GOTEBORG_TRAVERSAL.highClearance) - ENEMY_MATHBOOK.height,
-  },
+  { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_A_X, skin: 'spreadsheet' },
+  { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_B_X, skin: 'spreadsheet' },
+  { type: 'enemy-mathbook', x: GOTEBORG_MATHBOOK_C_X, skin: 'spreadsheet' },
 
   // Story beat 5 (AGENTS.md §3): the camera-reveal repair task's scripted
   // sequence (game.js updateBossApproach) -- stop, camera reveal, Jakob's
@@ -746,13 +720,11 @@ export const LEVEL = [
   },
 
   // Suit replaces studentmössa (AGENTS.md §3/§6).
-  { type: 'pickup', outfit: 'suit', x: SUIT_X },
+  { type: 'pickup', outfit: 'suit', x: SUIT_X, dropFrom: 'research-golem' },
 
   // Haga: the short post-boss Göteborg exterior (NEW LEVEL FLOW). No enemy
   // type is assigned to this stretch -- it is deliberately just traversal,
   // establishing that the player is back outside before the Clinic.
-  { type: 'platform', x: PLATFORM_H_X, y: platformTop(CLEARANCE_HIGH) },
-  { type: 'platform', x: PLATFORM_I_X, y: platformTop(CLEARANCE_LOW) },
 
   // The Clinic reception encounter (reception.js, PROTOTYPE step 1: intro
   // + Rounds 1-3). All positions below are measured from the arena's left
@@ -834,7 +806,6 @@ export const LEVEL = [
   { type: 'checkpoint', x: CHECKPOINT_USA_X },
   { type: 'thought-trigger', x: USA_THOUGHT_STADIUM_X, text: USA_THOUGHTS.stadium.text, duration: USA_THOUGHTS.stadium.duration },
   { type: 'thought-trigger', x: USA_THOUGHT_BUSINESS_X, text: USA_THOUGHTS.business.text, duration: USA_THOUGHTS.business.duration },
-  { type: 'platform', x: PLATFORM_J_X, y: platformTop(CLEARANCE_HIGH) },
 
   // The football helmets (USA, exchange semester): idle, telegraph,
   // charge, recover -- "dodge, then punish". Flat open ground, no
@@ -843,8 +814,6 @@ export const LEVEL = [
   // one never charges into the scripted approach.
   { type: 'enemy-helmet', x: USA_HELMET_X, minX: SECTION_USA_X, maxX: GRADUATION_TAKEOVER_X - ENEMY_HELMET.width },
 
-  { type: 'platform', x: PLATFORM_K_X, y: platformTop(CLEARANCE_LOW) },
-  { type: 'platform', x: PLATFORM_L_X, y: platformTop(CLEARANCE_HIGH) },
   { type: 'enemy-helmet', x: USA_HELMET_2_X, minX: SECTION_USA_X, maxX: GRADUATION_TAKEOVER_X - ENEMY_HELMET.width },
 
   // Story beat 9 (AGENTS.md §3): the portal. Control is taken as it comes
@@ -877,6 +846,7 @@ export const LEVEL = [
     outfit: 'armour',
     x: ARMOUR_X,
     y: WORLD.groundY - PICKUP.sprites.armour.height,
+    dropFrom: 'graduation',
     comics: ['armour', 'final'],
     next: 'application',
   },
@@ -915,10 +885,14 @@ export const DEBUG_START_X = {
   utspring: SECTION_LUND_RETURN_X - 400,
   // Just after the utspring, in front of the Gothenburg sign.
   goteborg: UTSPRING_END_X + 20,
+  spreadsheet: 12450, // just left of the spreadsheet under Handelshögskolan
   // Short of the reception's takeover, in Haga.
   clinic: RECEPTION_TRIGGER_X - 400,
   // Past the Clinic encounter, approaching the departures board and USA.
   usa: SECTION_USA_X - 800,
   // The end of USA, just before the Haga portal lead-in.
   graduation: SECTION_PORTAL_HAGA_X - 400,
+  // Graduation already beaten, just before the armour: walk right into it
+  // for the two ending comics.
+  ending: ARMOUR_X - 250,
 };

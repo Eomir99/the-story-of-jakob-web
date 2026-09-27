@@ -19,7 +19,7 @@
 //   browser still refuses a play() outside a click, the next click or key
 //   press -- the player is pressing keys constantly -- retries it.
 
-import { MUSIC } from './config.js';
+import { MUSIC, SFX } from './config.js';
 
 const players = new Map(); // track id -> { audio, level (0..1 fade gain), pending }
 let cue = null; // id of the one-off cue playing over the wanted track, or null
@@ -29,6 +29,23 @@ let suspended = false;
 let blocked = false; // a play() was refused by the browser's autoplay policy
 let lastTime = null;
 let volume = 1; // the player's volume control (ui.js), 0..1, on top of MUSIC.volume
+let sfxContext = null;
+const sfxBuffers = new Map(); // sfx id -> decoded AudioBuffer
+
+// One-shot gameplay sound effect (config.js SFX). Each play is its own
+// source, so rapid shots overlap instead of cutting each other off. Silent
+// while muted, unfocused, or before Start.
+export function playSfx(id) {
+  const buffer = sfxBuffers.get(id);
+  if (!buffer || muted || suspended) return;
+  if (sfxContext.state === 'suspended') sfxContext.resume();
+  const source = sfxContext.createBufferSource();
+  source.buffer = buffer;
+  const gain = sfxContext.createGain();
+  gain.gain.value = SFX[id].volume * volume;
+  source.connect(gain).connect(sfxContext.destination);
+  source.start();
+}
 
 // Called from the Start click (ui.js). Creating the elements here rather
 // than at boot also keeps the soundtrack out of the title-screen load.
@@ -41,6 +58,17 @@ export function unlockMusic() {
     audio.muted = muted;
     audio.volume = 0;
     players.set(id, { audio, level: 0, pending: false });
+  }
+  // Sound effects go through Web Audio, decoded up front: an <audio>
+  // element starts noticeably late, and a jump sound has to land on the
+  // jump. Created inside the Start click, so the browser allows it.
+  sfxContext = new AudioContext();
+  for (const [id, spec] of Object.entries(SFX)) {
+    fetch(spec.path)
+      .then((response) => response.arrayBuffer())
+      .then((data) => sfxContext.decodeAudioData(data))
+      .then((buffer) => sfxBuffers.set(id, buffer))
+      .catch(() => {}); // a missing effect just stays silent
   }
   window.addEventListener('pointerdown', retryBlocked, true);
   window.addEventListener('keydown', retryBlocked, true);

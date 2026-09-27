@@ -1,6 +1,6 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, GOTEBORG_CRANE_CAMERA, USA_STADIUM_CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, ENEMY_MATHBOOK } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, GOTEBORG_HANDELS_CAMERA, USA_STADIUM_CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, CEREMONY_BALLOONS, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, ENEMY_MATHBOOK } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { getImage } from './assets.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
@@ -13,6 +13,8 @@ import {
   drawResearchGolem,
   drawResearchGolemHpBar,
   drawResearchGolemClaims,
+  drawResearchGolemSpeech,
+  drawResearchGolemClaimHint,
   findResearchGolemClaimHit,
   resolveClaimShot,
   createGraduationBoss,
@@ -26,10 +28,11 @@ import {
   clearGraduationHazards,
   graduationSlabHitsPlayer,
 } from './bosses.js';
-import { LEVEL, LEVEL_BOUNDS, TUTORIAL_END_X, DEBUG_START_X, GOTEBORG_CRANE_VIEW, entryY } from './level.js';
+import { LEVEL, LEVEL_BOUNDS, TUTORIAL_END_X, DEBUG_START_X, GOTEBORG_HANDELS_VIEW, entryY } from './level.js';
 import {
   createReception,
   skipReception,
+  isReceptionDone,
   updateReception,
   applyReceptionWalls,
   receptionPlatforms,
@@ -361,6 +364,9 @@ let utspringTimer = 0;
 // and fade in once control returns.
 let afterUtspringClock = 0;
 let confetti = [];
+let balloons = []; // screen space, rising (CEREMONY_BALLOONS)
+let balloonSpawnTimer = 0;
+let celebrationStarted = false; // confetti and balloons, from the top of the climb
 
 function isUtspringRunning() {
   return utspringPhase !== UTSPRING.IDLE && utspringPhase !== UTSPRING.DONE;
@@ -371,6 +377,7 @@ function isUtspringRunning() {
 function updateUtspring(dt) {
   if (utspringPhase === UTSPRING.DONE) {
     afterUtspringClock += dt;
+    updateBalloons(dt, false); // the last ones float on up and away
     return;
   }
 
@@ -385,8 +392,10 @@ function updateUtspring(dt) {
   utspringTimer += dt;
   updateConfetti(dt);
   updateUtspringClouds(dt);
+  updateBalloons(dt, celebrationStarted);
 
   if (utspringPhase === UTSPRING.CLIMB) {
+    if (!celebrationStarted && player.x >= utspringTrigger.topX) startCelebration();
     // Walks up the climb at normal speed (applyStairSurface keeps his feet
     // on it) and across the top landing, until he reaches the descent line.
     if (player.x < utspringTrigger.descentX) return;
@@ -447,7 +456,18 @@ function beginDescent() {
   player.y = utspringTrigger.markY - player.height;
   player.vy = 0;
   player.onGround = true;
+  // Normally already running from the top of the climb; this only covers
+  // arriving here without passing it (a jump over the top of the climb).
+  if (!celebrationStarted) startCelebration();
+}
+
+// Confetti and balloons: the moment Jakob reaches the top of the stairs.
+function startCelebration() {
+  celebrationStarted = true;
   spawnConfetti();
+  for (let i = 0; i < CEREMONY_BALLOONS.initialCount; i++) {
+    spawnBalloon(CANVAS.height - Math.random() * CEREMONY_BALLOONS.heightMin);
+  }
 }
 
 // The utspring staircase is ground the player walks on, up and down
@@ -684,45 +704,106 @@ function drawCloud(ctx, text, centerX, bottom, spec, tailX) {
   const left = centerX - width / 2;
   const top = bottom - height;
 
+  // Cloud-shaped: a round puff at each end, big puffs of varying size
+  // along the top and smaller ones along the bottom, all overlapping the
+  // body so only their outer arcs show.
   const circles = [];
   const r = spec.bump;
-  const stepsX = Math.max(2, Math.round(width / (r * 1.6)));
-  const stepsY = Math.max(1, Math.round(height / (r * 1.6)));
-  for (let i = 0; i <= stepsX; i++) {
-    const x = left + (width * i) / stepsX;
-    circles.push([x, top, r], [x, bottom, r]);
+  const midY = top + height / 2;
+  const endR = height / 2 + r * 0.4;
+  circles.push([left, midY, endR], [left + width, midY, endR]);
+  const topR = Math.max(r * 1.4, height * 0.45);
+  const stepsTop = Math.max(2, Math.round(width / (topR * 1.3)));
+  for (let i = 0; i <= stepsTop; i++) {
+    const x = left + (width * i) / stepsTop;
+    const size = topR * (i % 2 === 0 ? 1 : 0.8);
+    circles.push([x, top + size * 0.35, size]);
   }
-  for (let i = 1; i < stepsY; i++) {
-    const y = top + (height * i) / stepsY;
-    circles.push([left, y, r], [left + width, y, r]);
+  const bottomR = Math.max(r, height * 0.32);
+  const stepsBottom = Math.max(2, Math.round(width / (bottomR * 1.5)));
+  for (let i = 1; i < stepsBottom; i++) {
+    const x = left + (width * i) / stepsBottom;
+    const size = bottomR * (i % 2 === 0 ? 0.85 : 1);
+    circles.push([x, bottom - size * 0.3, size]);
   }
   // The trailing puffs, from the cloud down toward the head.
   if (tailX !== null) {
-    circles.push([tailX + (centerX - tailX) * 0.35, bottom + r * 1.5, r * 0.55]);
-    circles.push([tailX + (centerX - tailX) * 0.1, bottom + r * 2.9, r * 0.35]);
+    circles.push([tailX + (centerX - tailX) * 0.35, bottom + r * 1.8, r * 0.6]);
+    circles.push([tailX + (centerX - tailX) * 0.1, bottom + r * 3.3, r * 0.38]);
   }
 
-  ctx.lineWidth = spec.borderWidth * 2; // half of it ends up hidden under the fill
-  ctx.strokeStyle = spec.border;
-  for (const [x, y, radius] of circles) {
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.stroke();
+  // The shape is drawn small and scaled up without smoothing, so its
+  // outline is made of chunky pixels like the rest of the art.
+  const key = `${text}|${spec.font}|${tailX === null ? 'none' : Math.round(tailX - centerX)}`;
+  let shape = cloudShapeCache.get(key);
+  if (!shape) {
+    shape = renderPixelCloud(circles, left, top, width, height, spec);
+    cloudShapeCache.set(key, shape);
   }
-  ctx.strokeRect(left, top, width, height);
-  ctx.fillStyle = spec.fill;
-  for (const [x, y, radius] of circles) {
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.fillRect(left, top, width, height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(shape.canvas, shape.x + (left - shape.left), shape.y + (top - shape.top),
+    shape.canvas.width * spec.pixelSize, shape.canvas.height * spec.pixelSize);
 
   ctx.fillStyle = spec.textColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'top';
   lines.forEach((line, i) => ctx.fillText(line, left + width / 2, top + spec.paddingY + i * spec.lineHeight + 2));
   ctx.restore();
+}
+
+// One cloud's outline and fill, at 1/pixelSize resolution, with every
+// pixel snapped to exactly the fill, the border or transparent -- no
+// soft anti-aliased edge. Cached per text (drawCloud), as clouds repeat.
+const cloudShapeCache = new Map();
+function renderPixelCloud(circles, left, top, width, height, spec) {
+  const px = spec.pixelSize;
+  const pad = spec.borderWidth * 2;
+  let minX = left, minY = top, maxX = left + width, maxY = top + height;
+  for (const [x, y, r] of circles) {
+    minX = Math.min(minX, x - r); minY = Math.min(minY, y - r);
+    maxX = Math.max(maxX, x + r); maxY = Math.max(maxY, y + r);
+  }
+  minX -= pad; minY -= pad; maxX += pad; maxY += pad;
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.ceil((maxX - minX) / px);
+  canvas.height = Math.ceil((maxY - minY) / px);
+  const c = canvas.getContext('2d');
+  c.scale(1 / px, 1 / px);
+  c.translate(-minX, -minY);
+  c.lineWidth = spec.borderWidth * 2; // half of it ends up hidden under the fill
+  c.strokeStyle = spec.border;
+  for (const [x, y, radius] of circles) {
+    c.beginPath();
+    c.arc(x, y, radius, 0, Math.PI * 2);
+    c.stroke();
+  }
+  c.fillStyle = spec.fill;
+  for (const [x, y, radius] of circles) {
+    c.beginPath();
+    c.arc(x, y, radius, 0, Math.PI * 2);
+    c.fill();
+  }
+  c.fillRect(left, top, width, height);
+
+  const fill = hexToRgbTriple(spec.fill);
+  const border = hexToRgbTriple(spec.border);
+  const image = c.getImageData(0, 0, canvas.width, canvas.height);
+  const d = image.data;
+  for (let i = 0; i < d.length; i += 4) {
+    if (d[i + 3] < 110) { d[i + 3] = 0; continue; }
+    // Nearer the fill or the border colour, by brightness.
+    const light = d[i] + d[i + 1] + d[i + 2];
+    const pick = Math.abs(light - fill.sum) < Math.abs(light - border.sum) ? fill : border;
+    d[i] = pick.r; d[i + 1] = pick.g; d[i + 2] = pick.b; d[i + 3] = 255;
+  }
+  c.putImageData(image, 0, 0);
+  return { canvas, left, top, x: minX, y: minY };
+}
+
+function hexToRgbTriple(hex) {
+  const n = parseInt(hex.slice(1), 16);
+  const r = (n >> 16) & 255, g = (n >> 8) & 255, b = n & 255;
+  return { r, g, b, sum: r + g + b };
 }
 
 function wrapThoughtText(ctx, text, maxWidth) {
@@ -775,7 +856,9 @@ function spawnConfetti() {
   for (let i = 0; i < CONFETTI.count; i++) {
     confetti.push({
       x: left + Math.random() * (view.width + runLength),
-      y: top - Math.random() * CONFETTI.spawnBandHeight,
+      y: Math.random() < CONFETTI.edgeShare
+        ? top - Math.random() * CONFETTI.edgeBandHeight
+        : top - Math.random() * CONFETTI.spawnBandHeight,
       vx: (Math.random() * 2 - 1) * CONFETTI.driftSpeed,
       vy: CONFETTI.fallSpeedMin + Math.random() * (CONFETTI.fallSpeedMax - CONFETTI.fallSpeedMin),
       angle: Math.random() * Math.PI * 2,
@@ -795,6 +878,47 @@ function updateConfetti(dt) {
     piece.angle += piece.spin * dt;
   }
   confetti = confetti.filter((piece) => piece.y < cullBelow);
+}
+
+// Balloons rising from below the screen, in screen space. New ones only
+// while `spawning`; each is dropped once it has left the top.
+function updateBalloons(dt, spawning) {
+  if (spawning) {
+    balloonSpawnTimer -= dt;
+    while (balloonSpawnTimer <= 0) {
+      balloonSpawnTimer += CEREMONY_BALLOONS.spawnInterval;
+      spawnBalloon(null);
+    }
+  }
+  if (balloons.length === 0) return;
+  for (const balloon of balloons) {
+    balloon.y -= balloon.speed * dt;
+    balloon.phase += CEREMONY_BALLOONS.swaySpeed * dt;
+  }
+  balloons = balloons.filter((balloon) => balloon.y + balloon.height > 0);
+}
+
+// y: screen y of the balloon's top, or null to start just below the screen.
+function spawnBalloon(y) {
+  const height = CEREMONY_BALLOONS.heightMin + Math.random() * (CEREMONY_BALLOONS.heightMax - CEREMONY_BALLOONS.heightMin);
+  balloons.push({
+    x: Math.random() * CANVAS.width,
+    y: y ?? CANVAS.height + height,
+    height,
+    speed: CEREMONY_BALLOONS.riseSpeedMin + Math.random() * (CEREMONY_BALLOONS.riseSpeedMax - CEREMONY_BALLOONS.riseSpeedMin),
+    phase: Math.random() * Math.PI * 2,
+    sprite: CEREMONY_BALLOONS.sprites[Math.floor(Math.random() * CEREMONY_BALLOONS.sprites.length)],
+  });
+}
+
+function drawBalloons(ctx) {
+  for (const balloon of balloons) {
+    const image = getImage(balloon.sprite);
+    if (!image) continue;
+    const width = balloon.height * image.width / image.height;
+    const x = balloon.x + Math.sin(balloon.phase) * CEREMONY_BALLOONS.swayAmplitude - width / 2;
+    ctx.drawImage(image, Math.round(x), Math.round(balloon.y), width, balloon.height);
+  }
 }
 
 // --- Death bursts -----------------------------------------------------
@@ -931,7 +1055,9 @@ function loadLevel() {
     if (entry.type === 'player-spawn') {
       spawnPoint = { x: entry.x, y };
     } else if (entry.type === 'enemy-mathbook') {
-      enemies.push(createMathbookEnemy(entry.x, y, { hp: entry.hp, idleDuration: entry.idleDuration }));
+      const mathbook = createMathbookEnemy(entry.x, y, { hp: entry.hp, idleDuration: entry.idleDuration, skin: entry.skin });
+      mathbook.label = entry.label ?? null;
+      enemies.push(mathbook);
     } else if (entry.type === 'enemy-inbox') {
       enemies.push(createInboxEnemy(entry.x, y));
     } else if (entry.type === 'enemy-helmet') {
@@ -944,7 +1070,7 @@ function loadLevel() {
       graduationBoss = createGraduationBoss(entry.x, y, entry.activationX);
       graduationArenaFrame = entry.arenaFrame ?? null;
     } else if (entry.type === 'tutorial-block') {
-      tutorialBlock = { x: entry.x, y, width: TUTORIAL.blockWidth, height: TUTORIAL.blockHeight };
+      tutorialBlock = { x: entry.x, y, width: TUTORIAL.blockWidth, height: TUTORIAL.blockHeight, label: entry.label ?? null };
     } else if (entry.type === 'solid-scenery') {
       solidScenery.push({ x: entry.x, y, width: entry.width, height: entry.height });
     } else if (entry.type === 'stair-surface') {
@@ -962,8 +1088,18 @@ function loadLevel() {
         comics: entry.comics ?? null, // set: touching opens these comics instead of changing outfit
         next: entry.next ?? null,
         collected: false,
+        // 'research-golem' / 'graduation': hidden until that boss falls,
+        // then dropped from it (updatePickupDrops). dropTimer counts the
+        // flight; null = not dropped yet.
+        dropFrom: entry.dropFrom ?? null,
+        dropTimer: null,
+        dropOrigin: null,
+        clock: 0, // s, drives the glow pulse and the bob
       });
-      checkpointXs.push(entry.x); // AGENTS.md §6: invisible checkpoints at each pickup
+      // AGENTS.md §6: invisible checkpoints at each pickup -- except the
+      // ending's armour, which ends the game, sits inside the Graduation
+      // arena, and would otherwise move the respawn up beside the boss.
+      if (!entry.comics) checkpointXs.push(entry.x);
     } else if (entry.type === 'checkpoint') {
       checkpointXs.push(entry.x);
     } else if (entry.type === 'background-section') {
@@ -971,7 +1107,7 @@ function loadLevel() {
     } else if (entry.type === 'landmark') {
       landmarks.push({ landmark: entry.landmark, x: entry.x, parallax: entry.parallax, showAfterUtspring: entry.showAfterUtspring ?? false });
     } else if (entry.type === 'utspring-trigger') {
-      utspringTrigger = { x: entry.x, descentX: entry.descentX, markY: y };
+      utspringTrigger = { x: entry.x, descentX: entry.descentX, topX: entry.topX, markY: y };
     } else if (entry.type === 'utspring-cloud') {
       utspringClouds.push({ x: entry.x, y, text: entry.text, shownFor: 0 });
     } else if (entry.type === 'thought-trigger') {
@@ -1101,6 +1237,9 @@ function currentMusic() {
   if (boss && boss.active && boss.alive) gameplayMusic = 'research-golem';
   else if (graduationBoss && graduationBoss.active) gameplayMusic = 'graduation';
   else gameplayMusic = backgroundSections[sectionIndexAt(player.x)].music ?? null;
+  // The Clinic track belongs to the reception minigame only: the moment it
+  // is over, the Göteborg track is back for the walk out of the Clinic.
+  if (gameplayMusic === 'clinic' && isReceptionDone(reception)) gameplayMusic = 'gothenburg';
   return gameplayMusic;
 }
 
@@ -1153,6 +1292,7 @@ function step(dt) {
   if (graduationSlabHitsPlayer(graduationBoss, player)) damagePlayer(player, GRADUATION.contactDamage);
   if (player.hp < hpBeforeHits) requestShake(SHAKE.playerDamage);
   watchBossPhaseChanges();
+  updatePickupDrops(dt);
   resolvePickups();
   advanceCheckpoint();
   handleDeathTransition();
@@ -1163,9 +1303,40 @@ function step(dt) {
   updateCamera(dt);
 }
 
+// A boss reward waits for its boss to fall, then flies out of it.
+function pickupLanded(pickup) {
+  return !pickup.dropFrom || (pickup.dropTimer !== null && pickup.dropTimer >= PICKUP.drop.duration);
+}
+
+function updatePickupDrops(dt) {
+  for (const pickup of pickups) {
+    pickup.clock += dt;
+    if (!pickup.dropFrom || pickup.collected) continue;
+    if (pickup.dropTimer === null) {
+      const source = pickup.dropFrom === 'graduation' ? graduationBoss : boss;
+      if (!source || source.alive) continue;
+      pickup.dropTimer = 0;
+      pickup.dropOrigin = { x: source.x + source.width / 2 - pickup.width / 2, y: source.y + source.height / 2 };
+    } else {
+      pickup.dropTimer += dt;
+    }
+  }
+}
+
+// Where a pickup is drawn: along its arc while dropping, else its spot.
+function pickupDrawPosition(pickup) {
+  if (!pickup.dropFrom || pickupLanded(pickup)) return { x: pickup.x, y: pickup.y };
+  const t = pickup.dropTimer / PICKUP.drop.duration;
+  const from = pickup.dropOrigin;
+  return {
+    x: from.x + (pickup.x - from.x) * t,
+    y: from.y + (pickup.y - from.y) * t - PICKUP.drop.arcHeight * 4 * t * (1 - t),
+  };
+}
+
 function resolvePickups() {
   for (const pickup of pickups) {
-    if (pickup.collected) continue;
+    if (pickup.collected || !pickupLanded(pickup)) continue;
     if (aabbOverlap(player, pickup)) {
       pickup.collected = true;
       if (pickup.comics) {
@@ -1550,12 +1721,12 @@ function updateCamera(dt) {
   else if (dy > halfDeadzoneH) desiredY = camera.y + (dy - halfDeadzoneH);
   else if (dy < -halfDeadzoneH) desiredY = camera.y + (dy + halfDeadzoneH);
 
-  // Pull back only around the decorative crane; normal boss framing wins.
-  const craneBlend = !framing && arenaLockCameraX === null ? Math.max(0, Math.min(1,
-    (player.x - GOTEBORG_CRANE_VIEW.xStart) / GOTEBORG_CRANE_CAMERA.blendDistance,
-    (GOTEBORG_CRANE_VIEW.xEnd - player.x) / GOTEBORG_CRANE_CAMERA.blendDistance)) : 0;
-  const craneY = WORLD.groundY - GOTEBORG_CRANE_CAMERA.centerAboveGround - CANVAS.height / 2;
-  desiredY += (craneY - desiredY) * craneBlend;
+  // Pull back only around Handelshögskolan; normal boss framing wins.
+  const handelsBlend = !framing && arenaLockCameraX === null ? Math.max(0, Math.min(1,
+    (player.x - GOTEBORG_HANDELS_VIEW.xStart) / GOTEBORG_HANDELS_CAMERA.blendDistance,
+    (GOTEBORG_HANDELS_VIEW.xEnd - player.x) / GOTEBORG_HANDELS_CAMERA.blendDistance)) : 0;
+  const handelsY = WORLD.groundY - GOTEBORG_HANDELS_CAMERA.centerAboveGround - CANVAS.height / 2;
+  desiredY += (handelsY - desiredY) * handelsBlend;
 
   const stadium = landmarks.find((placement) => placement.landmark === 'usa-stadium');
   const stadiumBlend = !framing && arenaLockCameraX === null && stadium
@@ -1575,7 +1746,7 @@ function updateCamera(dt) {
   // camera.zoom, so this is one target value, eased by the same smoothing
   // every other camera motion uses.
   let targetZoom = isUtspringRunning() ? STAIRCASE.zoomOut : 1;
-  targetZoom += (GOTEBORG_CRANE_CAMERA.zoom - targetZoom) * craneBlend;
+  targetZoom += (GOTEBORG_HANDELS_CAMERA.zoom - targetZoom) * handelsBlend;
   targetZoom += (USA_STADIUM_CAMERA.zoom - targetZoom) * stadiumBlend;
   if (framing) targetZoom = framing.zoom;
   const zoomEase = 1 - Math.exp(-CAMERA.zoomSmoothing * dt);
@@ -2098,9 +2269,11 @@ function render() {
   drawActiveThought(ctx);
   drawReceptionSpeech(ctx, reception, player, camera.zoom, visibleWorldRect());
   for (const enemy of enemies) drawEnemy(ctx, enemy);
+  drawTutorialLabels(ctx);
   drawResearchGolem(ctx, boss);
   drawResearchGolemHpBar(ctx, boss);
   drawResearchGolemClaims(ctx, boss);
+  drawResearchGolemSpeech(ctx, boss);
   drawGraduationBoss(ctx, graduationBoss);
   drawGraduationBossHpBar(ctx, graduationBoss);
   drawProjectiles(ctx);
@@ -2110,8 +2283,10 @@ function render() {
 
   // Screen space, after the camera transform is unwound: the HUD must not
   // pan or scale with the world (notably during the staircase pull-back).
+  drawBalloons(ctx);
   drawPlayerHud(ctx);
   drawReceptionHud(ctx, reception);
+  drawResearchGolemClaimHint(ctx, boss);
   // Over everything, HUD included: the arrival flash is the whole screen.
   drawUtspringFlash(ctx);
   drawDebugOverlay(ctx);
@@ -2200,6 +2375,25 @@ function drawTutorialBlock(ctx) {
   ctx.fillRect(x, y, width, TUTORIAL.blockTopHeight);
 }
 
+// Tutorial captions: above the jump block, and above a labelled enemy
+// while it is alive.
+function drawTutorialLabels(ctx) {
+  const labelled = enemies.filter((enemy) => enemy.label && enemy.alive);
+  if (tutorialBlock && tutorialBlock.label) labelled.push(tutorialBlock);
+  if (labelled.length === 0) return;
+  ctx.save();
+  ctx.font = TUTORIAL.labelFont;
+  ctx.fillStyle = TUTORIAL.labelColor;
+  ctx.shadowColor = TUTORIAL.labelShadowColor;
+  ctx.shadowBlur = TUTORIAL.labelShadowBlur;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  for (const thing of labelled) {
+    ctx.fillText(thing.label, Math.round(thing.x + thing.width / 2), Math.round(thing.y - TUTORIAL.labelGap));
+  }
+  ctx.restore();
+}
+
 function drawPlatforms(ctx) {
   for (const platform of platforms) {
     const x = Math.round(platform.x);
@@ -2216,19 +2410,27 @@ function drawPlatforms(ctx) {
 function drawPickups(ctx) {
   for (const pickup of pickups) {
     if (pickup.collected) continue;
+    if (pickup.dropFrom && pickup.dropTimer === null) continue; // boss still standing
+    const position = pickupDrawPosition(pickup);
+    const px = position.x;
+    const py = position.y - (pickupLanded(pickup)
+      ? (Math.sin(pickup.clock * PICKUP.bobSpeed) + 1) / 2 * PICKUP.bobAmplitude
+      : 0);
     const sprite = PICKUP.sprites[pickup.outfit];
     const image = sprite && getImage(sprite.path);
+    const drawHeight = sprite ? (sprite.drawHeight ?? pickup.height) : pickup.height;
+    drawPickupGlow(ctx, pickup, px + pickup.width / 2, py + pickup.height - drawHeight / 2);
     if (sprite) {
       if (image) {
         const width = sprite.drawWidth ?? pickup.width;
-        const height = sprite.drawHeight ?? pickup.height;
-        ctx.drawImage(image, Math.round(pickup.x + (pickup.width - width) / 2),
-          Math.round(pickup.y + pickup.height - height), width, height);
+        const height = drawHeight;
+        ctx.drawImage(image, Math.round(px + (pickup.width - width) / 2),
+          Math.round(py + pickup.height - height), width, height);
       }
       continue;
     }
     ctx.fillStyle = PICKUP.colors[pickup.outfit];
-    ctx.fillRect(Math.round(pickup.x), Math.round(pickup.y), pickup.width, pickup.height);
+    ctx.fillRect(Math.round(px), Math.round(py), pickup.width, pickup.height);
 
     ctx.fillStyle = PICKUP.labelColor;
     ctx.font = PICKUP.labelFont;
@@ -2236,10 +2438,22 @@ function drawPickups(ctx) {
     ctx.textBaseline = 'alphabetic';
     ctx.fillText(
       PICKUP.labels[pickup.outfit],
-      Math.round(pickup.x + pickup.width / 2),
-      Math.round(pickup.y - PICKUP.labelGapAboveBox)
+      Math.round(px + pickup.width / 2),
+      Math.round(py - PICKUP.labelGapAboveBox)
     );
   }
+}
+
+// A soft pulsing light behind a pickup, so it reads as "take me".
+function drawPickupGlow(ctx, pickup, centerX, centerY) {
+  const glow = PICKUP.glow;
+  const pulse = (Math.sin(pickup.clock * glow.pulseSpeed) + 1) / 2;
+  const alpha = glow.minAlpha + (glow.maxAlpha - glow.minAlpha) * pulse;
+  const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, glow.radius);
+  gradient.addColorStop(0, `rgba(${glow.color}, ${alpha})`);
+  gradient.addColorStop(1, `rgba(${glow.color}, 0)`);
+  ctx.fillStyle = gradient;
+  ctx.fillRect(centerX - glow.radius, centerY - glow.radius, glow.radius * 2, glow.radius * 2);
 }
 
 // The boss's authored projectile art (config.js
@@ -2288,6 +2502,31 @@ function drawBossProjectileSprite(ctx, projectile, x, y) {
 // centred on the hitbox. Falls back to the plain rectangle until the sheet
 // has loaded.
 function drawMathbookProjectile(ctx, projectile) {
+  if (projectile.spreadsheetShot) {
+    const skin = ENEMY_MATHBOOK.spreadsheetSkin;
+    const shot = getImage(skin.projectilePath);
+    if (!shot) return false;
+    const size = skin.projectileDrawSize;
+    // Time in flight, from the shot's remaining life.
+    const t = ENEMY_MATHBOOK.projectileLifetime - projectile.life;
+    const centerX = projectile.x + projectile.width / 2;
+    const centerY = projectile.y + projectile.height / 2;
+    const trailDirection = projectile.vx < 0 ? 1 : -1; // behind the shot
+    ctx.save();
+    for (let i = skin.trailCount; i >= 0; i--) {
+      // i = 0 is the shot itself; each copy lags a little in the bob.
+      const lag = t - i * 0.05;
+      ctx.globalAlpha = i === 0 ? 1 : skin.trailAlpha / 2 ** (i - 1);
+      ctx.save();
+      ctx.translate(centerX + trailDirection * i * skin.trailSpacing, centerY + Math.sin(lag * skin.bobSpeed) * skin.bobAmplitude);
+      ctx.rotate(Math.sin(lag * skin.bobSpeed * 0.5) * skin.wobbleAngle);
+      if (projectile.vx > 0) ctx.scale(-1, 1); // the art faces left
+      ctx.drawImage(shot, -size / 2, -size / 2, size, size);
+      ctx.restore();
+    }
+    ctx.restore();
+    return true;
+  }
   if (projectile.mathbookSymbol === undefined) return false;
   const spec = ENEMY_MATHBOOK.projectileSprite;
   const image = getImage(spec.path);
@@ -2299,10 +2538,31 @@ function drawMathbookProjectile(ctx, projectile) {
   return true;
 }
 
+// The player's shot: the card sprite (PROJECTILE.sprite), its card
+// centred on the hitbox, trail behind it, mirrored when thrown left.
+function drawPlayerCard(ctx, projectile) {
+  if (projectile.owner !== 'player') return false;
+  const spec = PROJECTILE.sprite;
+  const image = getImage(spec.path);
+  if (!image) return false;
+  const age = PROJECTILE.lifetime - projectile.life;
+  const frame = age < spec.launchDuration
+    ? 0
+    : spec.flightFrames[Math.floor((age - spec.launchDuration) / spec.frameDuration) % spec.flightFrames.length];
+  ctx.save();
+  ctx.translate(Math.round(projectile.x + projectile.width / 2), Math.round(projectile.y + projectile.height / 2));
+  if (projectile.vx < 0) ctx.scale(-1, 1);
+  ctx.drawImage(image, frame * spec.cellWidth, 0, spec.cellWidth, spec.cellHeight,
+    -spec.drawWidth * spec.bodyCenterX, -spec.drawHeight / 2, spec.drawWidth, spec.drawHeight);
+  ctx.restore();
+  return true;
+}
+
 function drawProjectiles(ctx) {
   for (const projectile of projectiles) {
     const x = Math.round(projectile.x);
     const y = Math.round(projectile.y);
+    if (drawPlayerCard(ctx, projectile)) continue;
     if (projectile.owner === 'player') {
       // A streak trailing the shot, on the side it came from. Player
       // shots travel at 900 px/s against 150-420 for everything hostile,

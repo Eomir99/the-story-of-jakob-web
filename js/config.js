@@ -326,7 +326,9 @@ export const LANDMARK = {
     'tram-crate-single': { path: 'assets/backgrounds/tram-crate-single.webp', colorMode: 'full-color', width: 145, height: 95, baselineY: 95, alpha: 1 },
     'goteborg-tram': { path: 'assets/backgrounds/goteborg-tram.webp', colorMode: 'full-color', width: 900, height: 239, baselineY: 239, alpha: 1 },
     'ai-project': { path: 'assets/backgrounds/ai-project.webp', colorMode: 'full-color', width: 350, height: 197.5, baselineY: 395, alpha: 1 },
-    'harbour-crane': { path: 'assets/backgrounds/harbour-crane.webp', colorMode: 'full-color', width: 576, height: 575, baselineY: 735, alpha: 1 },
+    // Handelshögskolan, Göteborg (author art). Delivered at exactly this
+    // box; baselineY is its lowest opaque row, not the transparent edge.
+    'handels': { path: 'assets/backgrounds/handels.webp', colorMode: 'full-color', width: 950, height: 500, baselineY: 496, alpha: 1 },
     // AGENTS.md §3: "a UF (Junior Achievement Sweden) reference in the
     // background". Never abbreviated on first appearance.
     // v3: the row of UF stalls with Candell UF's awards screen
@@ -345,6 +347,14 @@ export const LANDMARK = {
     // it with its trees and lampposts on the floor line.
     'utspring-staircase': { path: 'assets/backgrounds/utspring-staircase.webp', colorMode: 'full-color', width: 1599, height: 507, baselineY: 410, alpha: 1 },
     'utspring-polhem': { path: 'assets/backgrounds/utspring-polhem.webp', colorMode: 'full-color', width: 1672, height: 350, baselineY: 346, alpha: 1 },
+    // Graduation banner over the staircase's top landing, drawn behind the
+    // stair so its pillars and balloons overlap the poles. baselineY sits
+    // below the image (delivered px, 2 per world px): the pole feet land
+    // on the top landing, not the floor.
+    'utspring-banner': { path: 'assets/backgrounds/utspring-banner.webp', colorMode: 'full-color', width: 560, height: 327, baselineY: 1114, alpha: 1 },
+    // The student-flak truck parked after the staircase. baselineY is its
+    // lowest opaque row (the wheels), not the transparent edge below.
+    'ceremony-truck': { path: 'assets/backgrounds/ceremony-truck.webp', colorMode: 'full-color', width: 780, height: 381, baselineY: 742, alpha: 1 },
 
     // World props: road signs and the airport departures board (author
     // art). Signs stand on the ground: baselineY is the delivered image's
@@ -636,6 +646,24 @@ export const PROJECTILE = {
   speed: 900, // px/s
   lifetime: 1.1, // s before expiring
   fireCooldown: 0.28, // s between shots while held
+
+  // The shot's art: a small red card (art-source/projectiles/card), one
+  // row of four cells -- frame 0 the bare card, 1-3 the card with its
+  // speed trail. It launches on frame 0, then loops the trail frames.
+  // The card sits at the same place in every cell (right-aligned, trail
+  // to its left), bodyCenterX of the way across. Presentation only:
+  // width/height above stay the hitbox; the drawn streak is not used.
+  sprite: {
+    path: 'assets/player/card-shot.webp',
+    cellWidth: 64, // px per cell in the sheet
+    cellHeight: 25,
+    drawWidth: 36, // px on screen; the card itself is about 22x14
+    drawHeight: 14,
+    bodyCenterX: 0.69, // fraction of the cell's width
+    launchDuration: 0.05, // s on frame 0
+    flightFrames: [1, 2, 3],
+    frameDuration: 0.06, // s per trail frame
+  },
 };
 
 // Boss projectile lifetime (task B) -- was hardcoded to 4s directly in
@@ -816,13 +844,14 @@ export const GRADUATION_ENTRANCE = {
     maxWidth: 170, // px of text before wrapping
     paddingX: 16,
     paddingY: 12,
-    bump: 11, // px radius of the scallops around the cloud's edge
+    bump: 11, // px, the smallest puff radius around the cloud's edge
     gapAboveHead: 88, // px from the hitbox top to the cloud's bottom edge (the head is ~42px above the hitbox)
     offsetX: 40, // px the cloud sits right of Jakob's centre
-    fill: '#1f4e6b',
-    border: '#0d1117',
+    fill: '#ffffff',
+    border: '#1b2333',
     borderWidth: 3,
-    textColor: '#f7f3e3',
+    pixelSize: 4, // screen px per cloud pixel: the outline's chunkiness
+    textColor: '#1b2333',
   },
 };
 
@@ -894,10 +923,11 @@ export const STAIRCASE = {
       paddingX: 24,
       paddingY: 14,
       bump: 15,
-      fill: '#1f4e6b',
-      border: '#0d1117',
+      fill: '#ffffff',
+      border: '#1b2333',
       borderWidth: 3,
-      textColor: '#f7f3e3',
+      pixelSize: 4,
+      textColor: '#1b2333',
     },
   },
 };
@@ -928,15 +958,13 @@ export const STAIRCASE_THOUGHT = {
 
 // Göteborg dressing: author-owned placeholder copy, replace here when supplied.
 export const AI_PROJECT_THOUGHT = {
-  text: 'AI project — my experiments with AI. Details coming soon.',
+  text: 'What if I could build my own programs with AI?',
   duration: 3.6,
 };
 
 // Solid surfaces measured against the supplied Göteborg artwork.
 // x is local to each sprite; clearance is height above the ground.
 export const GOTEBORG_TRAVERSAL = {
-  lowClearance: 90,
-  highClearance: 130,
   tram: { x: 10, width: 880, clearance: 224 },
   doubleCrates: [
     { x: 16, width: 116, clearance: 100 },
@@ -945,7 +973,8 @@ export const GOTEBORG_TRAVERSAL = {
   singleCrate: { x: 14, width: 113, clearance: 92 },
 };
 
-export const GOTEBORG_CRANE_CAMERA = {
+// Pull back and raise the view while Jakob passes Handelshögskolan.
+export const GOTEBORG_HANDELS_CAMERA = {
   zoom: 0.72,
   blendDistance: 450,
   centerAboveGround: 280,
@@ -957,6 +986,12 @@ export const USA_STADIUM_CAMERA = {
   blendDistance: 550, // px to ease in before the facade and out after it
   centerAboveGround: 430, // px; keeps the roof visible during the reveal
   thoughtLead: 300, // px before the facade, as the pull-back becomes visible
+};
+
+// Shown just before Handelshögskolan.
+export const HANDELS_THOUGHT = {
+  text: 'Handelshögskolan, time to understand how businesses really work.',
+  duration: 3.2,
 };
 
 export const GOTHENBURG_THOUGHT = {
@@ -978,7 +1013,30 @@ export const CONFETTI = {
   driftSpeed: 70, // px/s, max horizontal drift in either direction
   spinSpeedMax: 5, // radians/s, in either direction
   spawnBandHeight: 1200, // px above the view that pieces start scattered through
+  // Share of pieces that start just above the top edge (within
+  // edgeBandHeight), so confetti starts falling in the moment Jakob reaches
+  // the top of the stairs; the rest are scattered through spawnBandHeight.
+  edgeShare: 0.3,
+  edgeBandHeight: 120, // px
   cullMargin: 60, // px below the view before a piece is removed
+};
+
+// Balloons rising from the bottom of the screen through the utspring,
+// from the top of the stairs until the title card is gone (game.js). Screen space,
+// drawn over the world. Sprites are single balloons cut from the
+// staircase's own railing balloons.
+export const CEREMONY_BALLOONS = {
+  sprites: ['assets/backgrounds/ceremony-balloon-yellow.webp', 'assets/backgrounds/ceremony-balloon-blue.webp'],
+  spawnInterval: 0.18, // s between new balloons
+  riseSpeedMin: 140, // px/s
+  riseSpeedMax: 240,
+  heightMin: 44, // px on screen; width follows the sprite
+  heightMax: 70,
+  swayAmplitude: 14, // px side to side
+  swaySpeed: 1.8, // radians/s
+  // A first burst the moment Jakob reaches the top of the stairs, starting at the bottom
+  // edge so they rise into view at once instead of arriving late.
+  initialCount: 12,
 };
 
 // The studentmössa on the player sprite. AGENTS.md §6: an overlay drawn
@@ -1035,6 +1093,24 @@ export const PICKUP = {
     suit: { path: 'assets/backgrounds/suit-pickup.webp', width: 32, height: 32, drawWidth: 76, drawHeight: 100 },
     armour: { path: 'assets/backgrounds/armour-pickup.webp', width: 80, height: 74 },
   },
+
+  // Boss rewards (level.js `dropFrom`) stay hidden until their boss falls,
+  // then pop out of the boss's middle and arc down to their spot. They can
+  // only be picked up once landed.
+  drop: {
+    duration: 0.9, // s from the boss to the ground
+    arcHeight: 160, // px the arc rises above the straight line
+  },
+  // Every pickup: a pulsing glow behind it and a gentle bob.
+  glow: {
+    color: '255, 226, 120', // r, g, b
+    radius: 70, // px, around the pickup's centre
+    minAlpha: 0.35,
+    maxAlpha: 0.75,
+    pulseSpeed: 4, // radians/s
+  },
+  bobAmplitude: 5, // px
+  bobSpeed: 3, // radians/s
 };
 
 // Platforms (task C, AGENTS.md §5: "fixed standard dimensions for...
@@ -1068,6 +1144,13 @@ export const TUTORIAL = {
   blockTopColor: '#74b4cf',
   blockEdgeWidth: 4,
   blockTopHeight: 6,
+  // Captions above the jump block and the first maths book (level.js
+  // `label`), matching the control labels at the top of the screen.
+  labelFont: 'bold 30px system-ui, sans-serif',
+  labelColor: '#ffffff',
+  labelShadowColor: '#111827',
+  labelShadowBlur: 8,
+  labelGap: 24, // px between the object's top and the text baseline
 };
 
 // Enemy roster (AGENTS.md §3). Three behaviours total: the maths book is
@@ -1078,15 +1161,14 @@ export const TUTORIAL = {
 //
 // The maths book is the game's first enemy and its real job is to teach
 // shooting: stationary, low HP, and it fires one slow projectile straight
-// ahead on a repeating idle -> telegraph -> shot cycle. "Straight ahead"
-// is always leftward -- the level runs one direction and the player
-// always approaches a stationary book from the left, so firing left is
-// always firing back toward wherever the player is coming from.
+// ahead on a repeating idle -> telegraph -> shot cycle. It turns to face
+// the player, so "straight ahead" is whichever side the player is on --
+// walking past one does not escape it.
 // Playtest round 2 (task 1): fired too slowly and died too fast. hp 2 -> 4,
 // idleDuration 6.2 -> 3.4 (full gap between shots, idleDuration +
-// telegraphDuration, goes from 7.1s to 4.3s). idleDuration must stay above
-// projectileLifetime (3s, below) or the "only one shot in flight at once"
-// guarantee that keeps this fair for a player who does nothing breaks.
+// telegraphDuration, goes from 7.1s to 4.3s). With the longer range
+// (projectileLifetime 4.4s, below) a book can have two shots in flight at
+// once; the first, tutorial book (idleDuration 6.2) still only ever has one.
 //
 // The very first placement (level.js, MATHBOOK_1_X) is the shooting
 // tutorial and must stay exactly as gentle as before -- a player who
@@ -1104,7 +1186,7 @@ export const ENEMY_MATHBOOK = {
   shotHitboxTop: 60,
   color: '#8a5a3a', // closed cover
   telegraphColor: '#e2b23c', // opens toward this before firing
-  hp: 5, // shots to kill (was 4; the first book overrides it in level.js)
+  hp: 9, // shots to kill (was 5; the first book overrides it in level.js)
   contactDamage: 1,
   hitFlashDuration: 0.12, // s
 
@@ -1120,18 +1202,17 @@ export const ENEMY_MATHBOOK = {
   idleDuration: 3.4, // was 6.2
   telegraphDuration: 0.9, // s -- AGENTS.md §4's 0.8-1.0s range applies to enemies too
 
-  projectileSpeed: 150, // px/s -- slow enough to walk away from without hurrying
+  projectileSpeed: 190, // px/s -- still slow enough to walk away from without hurrying
   projectileWidth: 22,
   projectileHeight: 14,
   projectileColor: '#ff6b3d', // hazard orange (HAZARD) -- was gold, the UF stand's exact colour
-  // s. At 150 px/s this is the shot's RANGE: 3s = 450px, a third of the
-  // screen. It was 6s = 900px, which is further than the distance from
-  // the player's spawn (x 120) to this enemy (x 900) -- so a player who
-  // read the controls and did not move for half a minute was hit at the
-  // spawn point, repeatedly, and eventually died there without ever
-  // having touched a key. idleDuration's note above claims "a player who
-  // does nothing must not die there"; at 6s that simply was not true.
-  projectileLifetime: 3,
+  // s. At 190 px/s this is the shot's RANGE: 4.4 s = ~835 px -- further
+  // than ACTIVATION.enemyLeadDistance (640), so a shot fired the moment an
+  // enemy wakes still reaches the player. (It was 3 s = 450 px, which fell
+  // short.) The first book is safe from the spawn point: it stands at x
+  // 1500, 1,380 px from the spawn (x 120), out of range. Off-screen shots
+  // are culled anyway (PROJECTILE_CULL_MARGIN).
+  projectileLifetime: 4.4,
 
   // The shot's authored art: a +, a = or a -, one after the other (each
   // book cycles through `symbols` in order, one per shot). Presentation
@@ -1176,6 +1257,41 @@ export const ENEMY_MATHBOOK = {
     // reinforce it, not be the whole tell.
     telegraphTintAlpha: 0.5,
     hitFlashTintAlpha: 0.7,
+  },
+
+  // Göteborg's version (level.js `skin: 'spreadsheet'`): the same enemy
+  // and behaviour in spreadsheet art (art-source/enemies/spreadsheet,
+  // flipped to face left). Idle and attack share one canvas so the swap
+  // cannot shift it; offsetY puts its feet on the footprint's bottom.
+  spreadsheetSkin: {
+    sprite: {
+      idlePath: 'assets/enemies/spreadsheet-idle.webp',
+      telegraphPath: 'assets/enemies/spreadsheet-attack.webp',
+      displayWidth: 84,
+      displayHeight: 90,
+      offsetX: 0,
+      offsetY: -21,
+      telegraphTintAlpha: 0.5,
+      hitFlashTintAlpha: 0.7,
+    },
+    projectilePath: 'assets/enemies/spreadsheet-projectile.webp',
+    projectileDrawSize: 34, // px square, centred on the same hitbox
+    // px higher than the maths book's shot (which leaves from the middle
+    // of the footprint): out of the spreadsheet's mouth. Still low enough
+    // to hit a standing player.
+    projectileRaise: 18,
+    // Fires twice per attack: the second shot this long after the first.
+    // Longer than a full jump (~0.75 s at PLAYER.jumpVelocity and
+    // WORLD.gravity) plus margin, so at projectileSpeed the shots arrive
+    // ~250 px apart: jump the first, land between them, jump the second.
+    secondShotDelay: 1.3, // s
+    // In flight: a gentle bob and tilt, plus fading copies trailing it.
+    bobAmplitude: 4, // px
+    bobSpeed: 9, // radians/s
+    wobbleAngle: 0.18, // radians either way
+    trailCount: 2,
+    trailSpacing: 16, // px between copies, behind the shot
+    trailAlpha: 0.35, // first copy; each further one halves
   },
 };
 
@@ -1501,8 +1617,8 @@ export const CLAIM_PHASE = {
   // physically unreachable. Stacking vertically means the player chooses
   // which claim to hit by jump TIMING (shoot low, mid, or near apex)
   // instead of by position. See project chat.
-  claimWidth: 300,
-  claimHeight: 52, // target; buildClaims shrinks it to fit the reachable band if needed
+  claimWidth: 440, // fits the longest thesis claim at textFont
+  claimHeight: 38, // target; buildClaims shrinks it to fit the reachable band if needed
   claimGapY: 6,
   // Inset from the very top/bottom of the reachable shot-height band
   // (computed from actual jump physics in bosses.js, not hardcoded), so no
@@ -1517,7 +1633,7 @@ export const CLAIM_PHASE = {
   boxBorderColor: '#f7f3e3',
   boxBorderWidth: 2, // px
   textColor: '#f7f3e3',
-  textFont: '20px sans-serif',
+  textFont: '15px sans-serif',
   tauntColor: '#f0806f',
 
   // Fallback question, for a set without its own `question` (sets below).
@@ -1547,26 +1663,37 @@ export const CLAIM_PHASE = {
   // drives both -- there is one window, not two to keep in sync.
   tauntDuration: 2.0,
 
-  // Claim content, a few words each, never sentences (they're read on
-  // canvas above a moving boss). One set per claim phase (max two). Each
-  // set asks its own `question`, read out above the claims; the answers
-  // are the evidence offered for it, and only one of them holds up.
-  // Author-owned copy -- placeholder wording.
+  // Claim content, from Jakob's bachelor thesis. One set per claim phase
+  // (max two). The golem says each set's `intro` line during the normal
+  // fight, once its HP falls within introLeadFraction of maxHp above that
+  // claim phase's threshold, for introDuration s. The claim phase then
+  // asks its `question` above the claims. Only one claim holds up; the
+  // floating marker beside it is the evidence (no evidence text).
+  introLeadFraction: 0.12,
+  introDuration: 3.0,
+  introColor: '#f7f3e3',
+  // Screen-space hint at the bottom centre while the claims are up.
+  hintText: 'Shoot the correct alternative',
+  hintFont: 'bold 36px sans-serif',
+  hintColor: '#f7f3e3',
+  hintBottomGap: 40, // px from the bottom of the screen to the text baseline
   sets: [
     {
-      question: 'Did the new DLC grow revenue?',
+      intro: 'Let’s see how well you know your own thesis.',
+      question: 'FIND THE SUPPORTED CLAIM',
       claims: [
-        { text: '40% YoY growth', correct: true },
-        { text: 'n = 12 survey', correct: false },
-        { text: 'No control group', correct: false },
+        { text: 'Games are usually rebuilt for each region.', correct: false },
+        { text: 'Most games keep one global version.', correct: true },
+        { text: 'Regional preferences don’t matter.', correct: false },
       ],
     },
     {
-      question: 'Are players spending more?',
+      intro: 'Not bad. One more.',
+      question: 'FIND THE SUPPORTED CLAIM',
       claims: [
-        { text: 'Consistent across quarters', correct: true },
-        { text: 'Cherry-picked date range', correct: false },
-        { text: 'Anonymous single source', correct: false },
+        { text: 'Player preferences usually force separate regional versions.', correct: false },
+        { text: 'Regulation can force separate regional versions.', correct: true },
+        { text: 'Localization requires a separate version of the game.', correct: false },
       ],
     },
   ],
@@ -1714,24 +1841,27 @@ export const GRADUATION = {
   abilities: {
     // Row 4 -- mace thrust forward. A staggered volley along the floor at
     // two heights, fired from his front edge. `height` is the shot's
-    // centre above the floor: the low shots (24) must be jumped; the high
-    // ones (135) pass over a player who simply stays on the ground (the
-    // player is 64 tall). `delay` is s after the strike. Every gap between
+    // centre above the floor: the low shots (24) skim the floor; the high
+    // ones (56) fly at body height, so they hit a standing player too
+    // (the player is 64 tall) -- every shot has to be jumped. `delay` is s after the strike. Every gap between
     // a low and the next shot leaves time to land before it arrives
     // (checked in the browser against the real jump values -- see the
     // task report), so no two shots ask for opposite answers at once.
     volley: {
       telegraphDuration: 0.9,
-      cooldown: 3.0, // s from the strike to the next wind-up -- past the last shot
+      // s from the strike to the next wind-up. Shorter than the volley
+      // itself, so the next attack (book rain) winds up while the last
+      // shots are still flying: the two overlap.
+      cooldown: 1.6,
       projectileSpeed: 380, // px/s
       projectileWidth: 30, // the hitbox
       projectileHeight: 14,
       visualScale: 1.6, // drawn this much larger than the hitbox, around its centre
       shots: [
         { height: 24, delay: 0 },
-        { height: 135, delay: 1.1 },
+        { height: 56, delay: 1.1 },
         { height: 24, delay: 1.8 },
-        { height: 135, delay: 2.9 },
+        { height: 56, delay: 2.9 },
       ],
       color: '#ff6a3d',
     },
@@ -1779,7 +1909,9 @@ export const GRADUATION = {
     // real jump (bosses.js), and measured in the browser (task report).
     'staff-slam': {
       telegraphDuration: 0.95,
-      cooldown: 4.6, // s from the strike -- the last wave has crossed the arena by then
+      // s from the strike. Shorter than the waves take to cross the
+      // arena, so the next attack overlaps the last of them.
+      cooldown: 2.6,
       waveCount: 3,
       waveSpeed: 360, // px/s
       waveSpacing: 540, // px between waves -> 1.5s apart
@@ -2099,12 +2231,30 @@ export const MUSIC = {
     // loop: false = a one-off cue (music.js playMusicCue) that plays once
     // over whatever was playing, which resumes when the cue ends.
     exploration: { path: 'assets/audio/exploration.mp3', loop: true, fadeIn: 1.5 },
+    // Göteborg and both Haga stretches. Long, overlapping crossfades in
+    // and out, so the switch from and to its neighbours is smooth.
+    gothenburg: { path: 'assets/audio/gothenburg.mp3', loop: true, fadeIn: 2.5, fadeOutPrevious: 2.5 },
+    // Played once from the final comic, when its "final boss music starts
+    // playing" strip appears (comic-data.js `music`).
+    'final-boss': { path: 'assets/audio/final-boss.mp3', loop: false, fadeIn: 0 },
     'student-ceremony': { path: 'assets/audio/student-ceremony.mp3', loop: false, fadeIn: 0 },
     'research-golem': { path: 'assets/audio/research-golem.mp3', loop: true, fadeIn: 0.3 },
     // A long, overlapping crossfade: exploration and the Clinic track are
     // very different, and a quick change between them sounded abrupt.
     clinic: { path: 'assets/audio/clinic.mp3', loop: true, fadeIn: 2.5, fadeOutPrevious: 2.5 },
-    usa: { path: 'assets/audio/usa.mp3', loop: true, fadeIn: 0.8 },
+    usa: { path: 'assets/audio/usa.mp3', loop: true, fadeIn: 2, fadeOutPrevious: 2 },
     graduation: { path: 'assets/audio/graduation.mp3', loop: true, fadeIn: 0.3 },
   },
+};
+
+// Gameplay sound effects (music.js playSfx). Kept deliberately low under
+// the music -- light feedback only. volume is 0..1 and also follows the
+// player's volume slider and Mute. The throw sound repeats constantly
+// while fire is held, so it should stay the quietest of the three.
+export const SFX = {
+  // Kenney RPG Audio drawKnife1 -- ~9 dB quieter at source than the
+  // previous throw sound, hence the higher number for the same level.
+  throw: { path: 'assets/audio/sfx-throw.mp3', volume: 0.2 },
+  jump: { path: 'assets/audio/sfx-jump.mp3', volume: 0.18 },
+  hurt: { path: 'assets/audio/sfx-hurt.mp3', volume: 0.4 },
 };

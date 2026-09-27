@@ -8,7 +8,7 @@
 // never touched by Graduation: AGENTS.md is explicit that mechanic is
 // Research-Golem-only.
 
-import { RESEARCH_GOLEM, GRADUATION, WORLD, TELEGRAPH, CLAIM_PHASE, PLAYER, PROJECTILE, BOSS_PROJECTILE_LIFETIME, DAMAGE_FLASH, HAZARD } from './config.js';
+import { CANVAS, RESEARCH_GOLEM, GRADUATION, WORLD, TELEGRAPH, CLAIM_PHASE, PLAYER, PROJECTILE, BOSS_PROJECTILE_LIFETIME, DAMAGE_FLASH, HAZARD } from './config.js';
 import { getImage } from './assets.js';
 
 // AGENTS.md §4: every attack's wind-up must be 0.8-1.0s. Enforced once at
@@ -49,6 +49,11 @@ export function createResearchGolem(x, y, activationX) {
     claimClock: 0, // s, for the evidence marker's floating bob
     lastClaimTaunt: null, // shown briefly after a wrong shot
     tauntTimer: 0,
+    // The claim set's intro line, said during the normal fight shortly
+    // before each claim phase (CLAIM_PHASE.introLeadFraction).
+    speech: null,
+    speechTimer: 0,
+    introsSaid: 0,
 
     // Presentation only, read by drawResearchGolem and nothing else. The
     // fight's own timers drive which pose is on screen, so these three
@@ -67,6 +72,7 @@ export function updateResearchGolem(boss, dt) {
   if (!boss.active) return []; // task B: sits idle until the player arrives
   if (boss.hitFlash > 0) boss.hitFlash -= dt;
   if (boss.tauntTimer > 0) boss.tauntTimer -= dt;
+  if (boss.speechTimer > 0) boss.speechTimer -= dt;
   // Presentation clocks (see createResearchGolem). Advanced before the
   // alive check so a dying frame still ticks, and outside every phase
   // branch so the idle keeps breathing during the claim phase.
@@ -222,7 +228,22 @@ export function damageResearchGolem(boss, amount) {
     boss.phase = 'dead';
     return;
   }
+  maybeSayClaimIntro(boss);
   maybeEnterClaimPhase(boss);
+}
+
+// The golem says the next claim set's intro line a little before its
+// claim phase starts, while the fight carries on as normal.
+function maybeSayClaimIntro(boss) {
+  const index = boss.introsSaid;
+  if (index >= RESEARCH_GOLEM.claimThresholds.length) return;
+  const claimSet = CLAIM_PHASE.sets[index % CLAIM_PHASE.sets.length];
+  const sayAt = RESEARCH_GOLEM.claimThresholds[index] + CLAIM_PHASE.introLeadFraction;
+  if (boss.hp > RESEARCH_GOLEM.maxHp * sayAt) return;
+  boss.introsSaid = index + 1;
+  if (!claimSet.intro) return;
+  boss.speech = claimSet.intro;
+  boss.speechTimer = CLAIM_PHASE.introDuration;
 }
 
 // ---------------------------------------------------------------------
@@ -825,7 +846,10 @@ function buildClaims(boss, setIndex) {
   const claimSet = CLAIM_PHASE.sets[setIndex % CLAIM_PHASE.sets.length];
   boss.claimQuestion = claimSet.question ?? CLAIM_PHASE.promptText;
   const set = shuffled(claimSet.claims);
-  const x = boss.x + boss.width / 2 - CLAIM_PHASE.claimWidth / 2;
+  // Right-aligned to the boss, extending left over the arena: the claims
+  // are wider than the golem, and centring them on it pushed them off the
+  // right edge of the screen.
+  const x = boss.x + boss.width - CLAIM_PHASE.claimWidth;
 
   // One column, stacked inside the reachable band with an inset margin so
   // no claim requires frame-perfect timing, divided evenly with gaps.
@@ -1097,11 +1121,30 @@ export function drawGraduationBossHpBar(ctx, boss) {
   drawBossHpBar(ctx, boss, GRADUATION);
 }
 
+// The intro line, on the same panel and spot the claim question uses.
+// Only outside the claim phase, where the question owns that panel.
+export function drawResearchGolemSpeech(ctx, boss) {
+  if (!boss.speech || boss.speechTimer <= 0 || boss.phase === 'claim' || !boss.alive) return;
+  const columnX = boss.x + boss.width - CLAIM_PHASE.claimWidth;
+  const claimsTop = computeReachableShotYBand().top + CLAIM_PHASE.reachableBandInset;
+  drawClaimBanner(ctx, boss.speech, CLAIM_PHASE.introColor, columnX + CLAIM_PHASE.claimWidth / 2, claimsTop);
+}
+
+// Screen space: the how-to hint at the bottom centre while claims are up.
+export function drawResearchGolemClaimHint(ctx, boss) {
+  if (boss.phase !== 'claim' || !boss.claims) return;
+  ctx.font = CLAIM_PHASE.hintFont;
+  ctx.fillStyle = CLAIM_PHASE.hintColor;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(CLAIM_PHASE.hintText, CANVAS.width / 2, CANVAS.height - CLAIM_PHASE.hintBottomGap);
+}
+
 export function drawResearchGolemClaims(ctx, boss) {
   if (boss.phase !== 'claim' || !boss.claims) return;
 
   const claimsTop = boss.claims[0].y;
-  const claimsCenterX = boss.x + boss.width / 2;
+  const claimsCenterX = boss.claims[0].x + boss.claims[0].width / 2;
   // Locked out after a wrong shot (findResearchGolemClaimHit, audit
   // finding A11): the boxes, the text and the evidence marker all
   // disappear -- not just the one that was wrong -- so there is nothing

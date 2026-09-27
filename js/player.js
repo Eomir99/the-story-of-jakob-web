@@ -4,6 +4,7 @@
 import { PLAYER, PROJECTILE, WORLD, PICKUP, BARK, DAMAGE_FLASH } from './config.js';
 import { getImage } from './assets.js';
 import { isActionDown, wasActionPressed } from './input.js';
+import { playSfx } from './music.js';
 
 const PLAYER_SPRITES = {
   none: 'assets/player/base.png',
@@ -161,6 +162,7 @@ export function updatePlayer(player, dt, spawnPoint, platforms = []) {
     player.onGround = false;
     player.coyoteTimer = 0; // spent -- one jump per departure from the ground
     player.jumpBufferTimer = 0; // spent -- one jump per press
+    playSfx('jump');
   }
 
   // Variable jump height: while rising with jump not held, the climb is
@@ -221,6 +223,7 @@ export function updatePlayer(player, dt, spawnPoint, platforms = []) {
   if (shooting && player.fireCooldown <= 0) {
     player.fireCooldown = PROJECTILE.fireCooldown;
     spawned.push(spawnProjectile(player));
+    playSfx('throw');
   }
   return spawned;
 }
@@ -249,6 +252,7 @@ export function damagePlayer(player, amount) {
   player.hp -= amount;
   player.hitFlashTimer = DAMAGE_FLASH.playerDuration;
   player.invulnerableFor = PLAYER.invulnerabilityDuration;
+  playSfx('hurt');
   if (player.hp <= 0) {
     player.dead = true;
     player.respawnTimer = PLAYER.respawnDelay;

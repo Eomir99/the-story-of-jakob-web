@@ -6,7 +6,7 @@
 /* The reference image's three simple labels above the opening path. */
 .tutorial-hints {
   position: absolute;
-  top: 5%;
+  top: 9%;
   left: 3%;
   width: 94%;
   display: grid;
@@ -16,7 +16,7 @@
   pointer-events: none;
   text-align: center;
   color: #fff;
-  font: 700 clamp(0.75rem, 1.7vw, 1.45rem)/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
+  font: 700 clamp(1.4rem, 3.2vw, 2.8rem)/1.2 system-ui, -apple-system, "Segoe UI", Roboto, Arial, sans-serif;
   text-shadow: 0 2px 4px #111827, 0 0 12px #111827;
 }
 .tutorial-hints[hidden] {

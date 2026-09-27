@@ -8,6 +8,7 @@
 import { COMIC } from './config.js';
 import { COMICS } from './comic-data.js';
 import { advanceFromComic } from './game.js';
+import { playMusicCue } from './music.js';
 
 const ASSET_BASE = './assets/comics/';
 
@@ -103,6 +104,8 @@ function addNextPanel() {
       panelListEl.appendChild(row);
     }
   }
+
+  if (panel.music) playMusicCue(panel.music);
 
   const img = frame.querySelector('img');
   const scrollToFrame = () => frame.scrollIntoView({ behavior: 'smooth', block: 'center' });

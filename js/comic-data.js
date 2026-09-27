@@ -79,7 +79,9 @@ export const COMICS = {
   final: {
     panels: [
       { image: 'comic-5-panel-1.webp', bubbles: [] },
-      { image: 'comic-5-panel-2.webp', bubbles: [] },
+      // `music`: a one-off cue (config.js MUSIC.tracks) started the moment
+      // this panel appears -- the strip that says the final boss music starts.
+      { image: 'comic-5-panel-2.webp', bubbles: [], music: 'final-boss' },
       { image: 'comic-5-panel-3.webp', bubbles: [] },
       { image: 'comic-5-panel-4.webp', bubbles: [] },
       { image: 'comic-5-panel-5.webp', bubbles: [] },

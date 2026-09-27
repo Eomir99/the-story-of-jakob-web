@@ -61,6 +61,12 @@ const PHASE = {
 // corner, over the card tray, where a click meant for a card could leave
 // the game.
 let encounterListener = null;
+// True once the encounter has finished (or was skipped). game.js swaps the
+// Clinic's intense track back to exploration from that moment.
+export function isReceptionDone(reception) {
+  return Boolean(reception) && reception.phase === PHASE.DONE;
+}
+
 export function subscribeToReceptionRunning(listener) {
   encounterListener = listener;
 }

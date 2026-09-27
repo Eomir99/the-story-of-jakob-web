@@ -43,6 +43,7 @@ export function createMathbookEnemy(x, y, overrides = {}) {
     height: ENEMY_MATHBOOK.height,
     hp: overrides.hp ?? ENEMY_MATHBOOK.hp,
     idleDuration: overrides.idleDuration ?? ENEMY_MATHBOOK.idleDuration,
+    skin: overrides.skin ?? null, // 'spreadsheet' = ENEMY_MATHBOOK.spreadsheetSkin art
     alive: true,
     hitFlash: 0,
     // Dormant until the player is within ACTIVATION.enemyLeadDistance
@@ -58,6 +59,10 @@ export function createMathbookEnemy(x, y, overrides = {}) {
     telegraph: null,
     // Which of ENEMY_MATHBOOK.projectileSprite.symbols the next shot is.
     nextSymbol: 0,
+    // -1 = left, 1 = right: turns to face the player and fires that way.
+    facing: -1,
+    // The spreadsheet's second shot: seconds until it fires, or null.
+    followUpTimer: null,
   };
 }
 
@@ -113,7 +118,7 @@ export function updateEnemy(enemy, dt, player) {
   // there is no cycle for it to wake up into.
   if (enemy.active === false) return [];
 
-  if (enemy.type === 'mathbook') return updateMathbookEnemy(enemy, dt);
+  if (enemy.type === 'mathbook') return updateMathbookEnemy(enemy, dt, player);
   if (enemy.type === 'helmet') return updateHelmetEnemy(enemy, dt, player);
   return [];
 }
@@ -135,12 +140,26 @@ export function activateEnemy(enemy) {
   }
 }
 
-function updateMathbookEnemy(enemy, dt) {
+function updateMathbookEnemy(enemy, dt, player) {
+  // Faces the player, whichever side they are on, so the shot goes at them.
+  const playerCenter = player.x + player.width / 2;
+  enemy.facing = playerCenter < enemy.x + enemy.width / 2 ? -1 : 1;
+
+  // The spreadsheet's second shot, a moment after the first.
+  if (enemy.followUpTimer !== null) {
+    enemy.followUpTimer -= dt;
+    if (enemy.followUpTimer <= 0) {
+      enemy.followUpTimer = null;
+      return [fireMathbookProjectile(enemy)];
+    }
+  }
+
   if (enemy.telegraph) {
     enemy.telegraph.timer -= dt;
     if (enemy.telegraph.timer <= 0) {
       enemy.telegraph = null;
       enemy.cycleTimer = enemy.idleDuration;
+      if (enemy.skin === 'spreadsheet') enemy.followUpTimer = ENEMY_MATHBOOK.spreadsheetSkin.secondShotDelay;
       return [fireMathbookProjectile(enemy)];
     }
     return [];
@@ -153,24 +172,28 @@ function updateMathbookEnemy(enemy, dt) {
   return [];
 }
 
-// Straight ahead, horizontal, always leftward -- see the roster comment
-// above for why "ahead" has a fixed direction here.
+// Straight ahead, horizontal, toward the side the player is on
+// (enemy.facing, updateMathbookEnemy).
 function fireMathbookProjectile(enemy) {
   const symbolCount = ENEMY_MATHBOOK.projectileSprite.symbols.length;
   const symbol = enemy.nextSymbol;
   enemy.nextSymbol = (enemy.nextSymbol + 1) % symbolCount;
   return {
-    x: enemy.x - ENEMY_MATHBOOK.projectileWidth,
-    y: enemy.y + enemy.height / 2 - ENEMY_MATHBOOK.projectileHeight / 2,
+    x: enemy.facing < 0 ? enemy.x - ENEMY_MATHBOOK.projectileWidth : enemy.x + enemy.width,
+    y: enemy.y + enemy.height / 2 - ENEMY_MATHBOOK.projectileHeight / 2
+      - (enemy.skin === 'spreadsheet' ? ENEMY_MATHBOOK.spreadsheetSkin.projectileRaise : 0),
     width: ENEMY_MATHBOOK.projectileWidth,
     height: ENEMY_MATHBOOK.projectileHeight,
-    vx: -ENEMY_MATHBOOK.projectileSpeed,
+    vx: ENEMY_MATHBOOK.projectileSpeed * enemy.facing,
     vy: 0,
     life: ENEMY_MATHBOOK.projectileLifetime,
     owner: 'enemy',
     contactDamage: ENEMY_MATHBOOK.contactDamage,
     color: ENEMY_MATHBOOK.projectileColor,
-    mathbookSymbol: symbol, // cell index into the projectile sheet (game.js drawProjectiles)
+    // Cell index into the projectile sheet (game.js drawProjectiles), or
+    // the spreadsheet's own shot for that skin.
+    mathbookSymbol: enemy.skin === 'spreadsheet' ? undefined : symbol,
+    spreadsheetShot: enemy.skin === 'spreadsheet',
   };
 }
 
@@ -314,7 +337,7 @@ const SPRITE = {
 export function drawEnemy(ctx, enemy) {
   if (!enemy.alive) return;
 
-  const spec = SPRITE[enemy.type];
+  const spec = enemy.skin === 'spreadsheet' ? ENEMY_MATHBOOK.spreadsheetSkin.sprite : SPRITE[enemy.type];
   const image = spec ? getImage(spritePathFor(enemy, spec)) : undefined;
   // Only if the real asset genuinely failed to load -- a normal
   // successful load always draws the artwork (same resilience rule as
@@ -332,7 +355,8 @@ export function drawEnemy(ctx, enemy) {
 
   // The helmet's art faces left; flip it when it is facing right so it
   // keeps looking at the player and its charge direction stays readable.
-  const flip = enemy.type === 'helmet' && enemy.facing === 1;
+  // The maths book and spreadsheet art face left too, and turn the same way.
+  const flip = enemy.facing === 1;
   ctx.save();
   if (flip) {
     ctx.translate(x + spec.displayWidth, y);
