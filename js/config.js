@@ -1186,7 +1186,7 @@ export const ENEMY_MATHBOOK = {
   shotHitboxTop: 60,
   color: '#8a5a3a', // closed cover
   telegraphColor: '#e2b23c', // opens toward this before firing
-  hp: 9, // shots to kill (was 5; the first book overrides it in level.js)
+  hp: 7, // shots to kill (the first book overrides it in level.js)
   contactDamage: 1,
   hitFlashDuration: 0.12, // s
 
@@ -1608,6 +1608,10 @@ export const RESEARCH_GOLEM = {
 // — do not reuse the "choose correctly" idea for any other boss or enemy.
 export const CLAIM_PHASE = {
   wrongAnswerHealFraction: 0.04, // fraction of maxHp healed per wrong shot
+  // Hits the correct claim needs before the shield breaks. After the first
+  // its border turns correctHitBorderColor, so the player sees it counted.
+  correctHitsRequired: 2,
+  correctHitBorderColor: '#6fd67a',
 
   // Claims stack VERTICALLY in one column, not side by side. The boss is a
   // solid wall (RESEARCH_GOLEM.solidWall) so the player's horizontal
@@ -1617,13 +1621,13 @@ export const CLAIM_PHASE = {
   // physically unreachable. Stacking vertically means the player chooses
   // which claim to hit by jump TIMING (shoot low, mid, or near apex)
   // instead of by position. See project chat.
-  claimWidth: 440, // fits the longest thesis claim at textFont
-  claimHeight: 38, // target; buildClaims shrinks it to fit the reachable band if needed
-  claimGapY: 6,
-  // Inset from the very top/bottom of the reachable shot-height band
-  // (computed from actual jump physics in bosses.js, not hardcoded), so no
-  // claim needs frame-perfect apex timing to hit.
-  reachableBandInset: 4,
+  claimWidth: 500, // fits the longest thesis claim at textFont
+  claimHeight: 50, // px; the three are centred on the apex, middle and standing shot heights
+  // px the top and bottom claims' centres sit inside the reachable
+  // shot-height band (computed from the jump physics in bosses.js): the
+  // top one just under the apex, so it needs no frame-perfect timing, and
+  // the bottom one still squarely in a standing shot.
+  reachableBandInset: 10,
 
   // How a claim is drawn. This used to sit inside bosses.js's draw call as
   // literal colours, two font sizes and a bare -22 offset, which made the
@@ -1633,7 +1637,7 @@ export const CLAIM_PHASE = {
   boxBorderColor: '#f7f3e3',
   boxBorderWidth: 2, // px
   textColor: '#f7f3e3',
-  textFont: '15px sans-serif',
+  textFont: '17px sans-serif',
   tauntColor: '#f0806f',
 
   // Fallback question, for a set without its own `question` (sets below).
@@ -1672,11 +1676,18 @@ export const CLAIM_PHASE = {
   introLeadFraction: 0.12,
   introDuration: 3.0,
   introColor: '#f7f3e3',
-  // Screen-space hint at the bottom centre while the claims are up.
-  hintText: 'Shoot the correct alternative',
-  hintFont: 'bold 36px sans-serif',
-  hintColor: '#f7f3e3',
-  hintBottomGap: 40, // px from the bottom of the screen to the text baseline
+  // Screen-space hint, large at the top centre, while the claims are up.
+  hintText: 'Shoot the correct alternative twice',
+  hintFont: 'bold 44px sans-serif',
+  hintColor: '#ffd65a',
+  hintOutlineColor: '#0d1117',
+  hintOutlineWidth: 6, // px
+  hintTopY: 120, // px from the top of the screen to the text baseline
+  // s the whole game freezes when a claim phase opens, to read the hint.
+  // Every shot in the air is cleared as it starts.
+  introPause: 2.0,
+  // s after the freeze during which the claims cannot be hit yet.
+  immuneAfterPause: 0.4,
   sets: [
     {
       intro: 'Let’s see how well you know your own thesis.',

@@ -1,6 +1,6 @@
 // game.js — fixed-timestep game loop and state machine.
 
-import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, GOTEBORG_HANDELS_CAMERA, USA_STADIUM_CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, CEREMONY_BALLOONS, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, ENEMY_MATHBOOK } from './config.js';
+import { CANVAS, TIMESTEP, WORLD, PLAYER, PROJECTILE, PROJECTILE_CULL_MARGIN, CAMERA, GOTEBORG_HANDELS_CAMERA, USA_STADIUM_CAMERA, RESEARCH_GOLEM, RESEARCH_GOLEM_EXIT, GRADUATION, PICKUP, PLATFORM, TUTORIAL, BACKGROUND, BACKGROUNDS, LANDMARK, DEBUG, STAIRCASE, CONFETTI, CEREMONY_BALLOONS, HUD, HITSTOP, DEATH_BURST, SHAKE, HAZARD, BOSS_APPROACH, GRADUATION_ENTRANCE, ENEMY_MATHBOOK, CLAIM_PHASE } from './config.js';
 import { initInput, clearFrameInput, resetInput, setInputSuppressed } from './input.js';
 import { getImage } from './assets.js';
 import { createPlayer, updatePlayer, drawPlayer, damagePlayer, applyPickup, spawnBark } from './player.js';
@@ -1641,6 +1641,14 @@ function requestShake(amplitude) {
 function watchBossPhaseChanges() {
   if (boss.active && boss.phase !== lastBossPhase) {
     if (lastBossPhase !== null) requestShake(SHAKE.bossPhaseChange);
+    // A claim phase opens on a short freeze, so the player can read the
+    // question and the hint before anything moves. Every shot still in the
+    // air is cleared -- the player's too, so none hits a claim (or the
+    // player) the moment it resumes.
+    if (boss.phase === 'claim') {
+      projectiles = [];
+      if (CLAIM_PHASE.introPause > hitstopTimer) hitstopTimer = CLAIM_PHASE.introPause;
+    }
     lastBossPhase = boss.phase;
   }
   if (graduationBoss.active && graduationBoss.stage !== lastGraduationStage) {

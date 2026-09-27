@@ -856,17 +856,17 @@ function buildClaims(boss, setIndex) {
   const band = computeReachableShotYBand();
   const usableTop = band.top + CLAIM_PHASE.reachableBandInset;
   const usableBottom = band.bottom - CLAIM_PHASE.reachableBandInset;
+  // Centred on three shot heights: the top one at the jump's apex, the
+  // bottom one where a standing shot flies, the middle one halfway.
   const n = set.length;
-  const totalGap = (n - 1) * CLAIM_PHASE.claimGapY;
-  const slotHeight = (usableBottom - usableTop - totalGap) / n;
-  const claimHeight = Math.min(CLAIM_PHASE.claimHeight, slotHeight);
+  const claimHeight = CLAIM_PHASE.claimHeight;
 
   return set.map((entry, i) => {
-    const slotTop = usableTop + i * (slotHeight + CLAIM_PHASE.claimGapY);
-    const slotCenter = slotTop + slotHeight / 2;
+    const slotCenter = usableTop + (usableBottom - usableTop) * (i / (n - 1));
     return {
       text: entry.text,
       correct: entry.correct,
+      hits: 0, // correct hits so far (CLAIM_PHASE.correctHitsRequired)
       x,
       y: slotCenter - claimHeight / 2,
       width: CLAIM_PHASE.claimWidth,
@@ -886,10 +886,14 @@ function buildClaims(boss, setIndex) {
 // of nothing no matter how fast it keeps firing.
 export function findResearchGolemClaimHit(boss, projectile) {
   if (boss.phase !== 'claim' || !boss.claims || boss.tauntTimer > 0) return null;
+  // Immune for a moment after the opening freeze (claimClock only runs
+  // once it is over), so a shot fired as it ends cannot land at once.
+  if (boss.claimClock < CLAIM_PHASE.immuneAfterPause) return null;
   return boss.claims.find((claim) => aabbOverlap(projectile, claim)) || null;
 }
 
-// Resolves a claim shot: correct breaks the shield and resumes the fight in
+// Resolves a claim shot: the correct claim, once hit correctHitsRequired
+// times, breaks the shield and resumes the fight in
 // phase B (faster, per AGENTS.md §4); wrong heals the boss slightly and
 // taunts, but never undoes meaningful progress -- the player can keep
 // trying the remaining claims. boss.claims is never touched here on a
@@ -898,6 +902,8 @@ export function findResearchGolemClaimHit(boss, projectile) {
 // nothing about the puzzle itself resets.
 export function resolveClaimShot(boss, claim) {
   if (claim.correct) {
+    claim.hits += 1;
+    if (claim.hits < CLAIM_PHASE.correctHitsRequired) return;
     boss.phase = 'phaseB';
     boss.cycleTimer = RESEARCH_GOLEM.phaseB.cycleInterval;
     boss.claims = null;
@@ -1126,18 +1132,22 @@ export function drawGraduationBossHpBar(ctx, boss) {
 export function drawResearchGolemSpeech(ctx, boss) {
   if (!boss.speech || boss.speechTimer <= 0 || boss.phase === 'claim' || !boss.alive) return;
   const columnX = boss.x + boss.width - CLAIM_PHASE.claimWidth;
-  const claimsTop = computeReachableShotYBand().top + CLAIM_PHASE.reachableBandInset;
+  const claimsTop = computeReachableShotYBand().top + CLAIM_PHASE.reachableBandInset - CLAIM_PHASE.claimHeight / 2;
   drawClaimBanner(ctx, boss.speech, CLAIM_PHASE.introColor, columnX + CLAIM_PHASE.claimWidth / 2, claimsTop);
 }
 
-// Screen space: the how-to hint at the bottom centre while claims are up.
+// Screen space: the how-to hint, large, at the top centre while claims are up.
 export function drawResearchGolemClaimHint(ctx, boss) {
   if (boss.phase !== 'claim' || !boss.claims) return;
   ctx.font = CLAIM_PHASE.hintFont;
   ctx.fillStyle = CLAIM_PHASE.hintColor;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'alphabetic';
-  ctx.fillText(CLAIM_PHASE.hintText, CANVAS.width / 2, CANVAS.height - CLAIM_PHASE.hintBottomGap);
+  ctx.lineWidth = CLAIM_PHASE.hintOutlineWidth;
+  ctx.strokeStyle = CLAIM_PHASE.hintOutlineColor;
+  ctx.lineJoin = 'round';
+  ctx.strokeText(CLAIM_PHASE.hintText, CANVAS.width / 2, CLAIM_PHASE.hintTopY);
+  ctx.fillText(CLAIM_PHASE.hintText, CANVAS.width / 2, CLAIM_PHASE.hintTopY);
 }
 
 export function drawResearchGolemClaims(ctx, boss) {
@@ -1156,8 +1166,8 @@ export function drawResearchGolemClaims(ctx, boss) {
     for (const claim of boss.claims) {
       ctx.fillStyle = CLAIM_PHASE.boxFillColor;
       ctx.fillRect(Math.round(claim.x), Math.round(claim.y), claim.width, claim.height);
-      ctx.strokeStyle = CLAIM_PHASE.boxBorderColor;
-      ctx.lineWidth = CLAIM_PHASE.boxBorderWidth;
+      ctx.strokeStyle = claim.hits > 0 ? CLAIM_PHASE.correctHitBorderColor : CLAIM_PHASE.boxBorderColor;
+      ctx.lineWidth = claim.hits > 0 ? CLAIM_PHASE.boxBorderWidth * 2 : CLAIM_PHASE.boxBorderWidth;
       ctx.strokeRect(Math.round(claim.x), Math.round(claim.y), claim.width, claim.height);
 
       ctx.fillStyle = CLAIM_PHASE.textColor;

@@ -886,6 +886,7 @@ export const DEBUG_START_X = {
   // Just after the utspring, in front of the Gothenburg sign.
   goteborg: UTSPRING_END_X + 20,
   spreadsheet: 12450, // just left of the spreadsheet under Handelshögskolan
+  golem: 16700, // past the tram, just before the Research Golem building
   // Short of the reception's takeover, in Haga.
   clinic: RECEPTION_TRIGGER_X - 400,
   // Past the Clinic encounter, approaching the departures board and USA.
