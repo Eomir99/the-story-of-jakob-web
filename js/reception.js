@@ -216,8 +216,11 @@ function enterPhase(reception, phase) {
   if (encounterListener) encounterListener(encounterRunning(reception));
 }
 
-function say(reception, speaker, text, duration = null) {
-  const line = { text, timer: duration };
+// thought: drawn as the level's thought cloud (game.js drawThoughtBubble)
+// instead of a speech bubble -- Jakob's wondering at the sign is a thought,
+// everything else here is spoken.
+function say(reception, speaker, text, duration = null, thought = false) {
+  const line = { text, timer: duration, thought };
   if (speaker === 'player') reception.playerLine = line;
   else reception.deskLine = line;
 }
@@ -453,7 +456,7 @@ export function updateReception(reception, dt, player) {
     setInputSuppressed(true);
     player.invincible = true;
     player.shootingDisabled = true;
-    say(reception, 'player', RECEPTION.lines.think, RECEPTION.thinkDuration);
+    say(reception, 'player', RECEPTION.lines.think, RECEPTION.thinkDuration, true);
     enterPhase(reception, PHASE.THINK);
     return;
   }
@@ -810,10 +813,12 @@ function drawItem(ctx, reception, item, alpha = 1) {
 // After the player: speech bubbles, so they are never hidden behind him.
 // Drawn in world space but sized against the camera zoom, so their text is
 // the same on-screen size whether the camera is framed out or not.
-export function drawReceptionSpeech(ctx, reception, player, zoom, view) {
+export function drawReceptionSpeech(ctx, reception, player, zoom, view, drawThought) {
   if (!reception) return;
   const spec = RECEPTION.bubble;
-  if (reception.playerLine && !player.dead) {
+  if (reception.playerLine?.thought && !player.dead) {
+    drawThought(ctx, reception.playerLine.text, player.x + player.width / 2, player.y);
+  } else if (reception.playerLine && !player.dead) {
     // The sprite's visible head sits about 42px above the hitbox top.
     drawBubble(ctx, view, reception.playerLine.text, player.x + player.width / 2, player.y - 42 - spec.gapAboveSpeaker / zoom, zoom);
   }

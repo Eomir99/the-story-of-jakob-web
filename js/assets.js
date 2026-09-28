@@ -42,6 +42,8 @@ export const MANIFEST = [
   { path: 'assets/backgrounds/graduation-portal.webp' },
   { path: 'assets/backgrounds/graduation-arena.webp' },
   { path: 'assets/backgrounds/graduation-ground.webp' },
+  { path: 'assets/ui/heart-full.webp' },
+  { path: 'assets/ui/heart-empty.webp' },
   { path: 'assets/player/card-shot.webp' },
   { path: 'assets/enemies/math-book-idle.webp' },
   { path: 'assets/enemies/math-book-open.webp' },

@@ -325,7 +325,9 @@ export const LANDMARK = {
     'tram-crates-double': { path: 'assets/backgrounds/tram-crates-double.webp', colorMode: 'full-color', width: 240, height: 132, baselineY: 132, alpha: 1 },
     'tram-crate-single': { path: 'assets/backgrounds/tram-crate-single.webp', colorMode: 'full-color', width: 145, height: 95, baselineY: 95, alpha: 1 },
     'goteborg-tram': { path: 'assets/backgrounds/goteborg-tram.webp', colorMode: 'full-color', width: 900, height: 239, baselineY: 239, alpha: 1 },
-    'ai-project': { path: 'assets/backgrounds/ai-project.webp', colorMode: 'full-color', width: 350, height: 197.5, baselineY: 395, alpha: 1 },
+    // baselineY: the stand's feet (crates/planters), not the stool, which
+    // hangs lower and is left to sink behind the floor.
+    'ai-project': { path: 'assets/backgrounds/ai-project.webp', colorMode: 'full-color', width: 350, height: 197.5, baselineY: 386, alpha: 1 },
     // Handelshögskolan, Göteborg (author art). Delivered at exactly this
     // box; baselineY is its lowest opaque row, not the transparent edge.
     'handels': { path: 'assets/backgrounds/handels.webp', colorMode: 'full-color', width: 950, height: 500, baselineY: 496, alpha: 1 },
@@ -586,7 +588,11 @@ export const PLAYER = {
 // Milestone 4 DOM layer). Drawn in screen space, so the camera's zoom and
 // pan never move it. Bosses have their own bar (§4); this is the player's.
 export const HUD = {
-  hpPipSize: 18, // px, one square per hit point
+  // One heart per hit point (assets/ui/heart-*.webp, 96x82 source).
+  heartFullPath: 'assets/ui/heart-full.webp',
+  heartEmptyPath: 'assets/ui/heart-empty.webp',
+  heartWidth: 34, // px on the 1280x720 canvas; height follows the art
+  hpPipSize: 18, // px, fallback square if the heart image is missing
   hpPipGap: 8,
   marginX: 24,
   marginY: 24,
@@ -1100,6 +1106,17 @@ export const PICKUP = {
   drop: {
     duration: 0.9, // s from the boss to the ground
     arcHeight: 160, // px the arc rises above the straight line
+  },
+  // Heart drops: every Nth enemy killed drops a heart that restores HP.
+  // Same arc (drop above), glow and bob as the boss rewards. A heart is
+  // only taken while missing HP, so one found at full health waits.
+  heart: {
+    everyNthKill: 2,
+    heal: 1, // HP restored
+    width: 30, // px; height follows the heart art
+    path: 'assets/ui/heart-full.webp',
+    landDistance: 40, // px the heart lands in front of where the enemy died
+    glowRadius: 36, // px; smaller than the boss rewards' glow (PICKUP.glow.radius)
   },
   // Every pickup: a pulsing glow behind it and a gentle bob.
   glow: {
@@ -1722,6 +1739,11 @@ export const GRADUATION = {
   // same way the Research Golem's is.
   width: 160,
   height: 270,
+  // Extra px on the boss's LEFT edge that only player shots use (not the
+  // wall, not the sprite). The arena is slightly wider than a shot's range
+  // (PROJECTILE speed x lifetime), so from the far left wall shots
+  // expired just short of the boss.
+  shotHitPadding: 60,
   color: '#5b4a72',
   hitFlashDuration: 0.12, // s
   telegraphColor: '#e2b23c',
@@ -2176,9 +2198,11 @@ export const RECEPTION = {
     radius: 12,
     tail: 10,
     gapAboveSpeaker: 14,
-    fill: '#1f4e6b',
-    border: '#0d1117',
-    textColor: '#f7f3e3',
+    // Clean white speech bubble: spoken lines, not thoughts (those use
+    // the thought cloud, GRADUATION_ENTRANCE.thoughtBubble).
+    fill: '#ffffff',
+    border: '#1b2333',
+    textColor: '#1b2333',
   },
   hud: {
     font: 'bold 26px sans-serif',

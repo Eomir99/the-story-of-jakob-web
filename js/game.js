@@ -124,6 +124,9 @@ let enemies;
 let boss;
 let graduationBoss;
 let pickups;
+// Hearts dropped by killed enemies (PICKUP.heart); killCount picks which.
+let heartDrops = [];
+let killCount = 0;
 let platforms; // task C: { x, y, width, height }, one-way landable rectangles
 let solidScenery; // authored tram/crate collision; artwork is rendered as landmarks
 let tutorialBlock; // the single solid jump block in the opening
@@ -1018,6 +1021,8 @@ function loadLevel() {
   boss = null;
   graduationBoss = null;
   pickups = [];
+  heartDrops = [];
+  killCount = 0;
   platforms = [];
   tutorialBlock = null;
   solidScenery = [];
@@ -1200,15 +1205,16 @@ function loop(now) {
   if (gameState === STATE.PLAYING) {
     accumulator += delta;
     while (accumulator >= FIXED_DT && gameState === STATE.PLAYING) {
-      step(FIXED_DT);
+      const inputRead = step(FIXED_DT) !== false;
       accumulator -= FIXED_DT;
       // An edge-triggered press belongs to the fixed step that read it,
       // not to the rendered frame. A rendered frame does not always run a
       // step -- whenever the display refreshes faster than 60 Hz, and at
       // 60 Hz too whenever vsync jitter leaves the accumulator just short
       // of one step -- and clearing per rendered frame silently threw
-      // those presses away, so jumps were being dropped.
-      clearFrameInput();
+      // those presses away, so jumps were being dropped. The same holds
+      // for a hitstop step, which reads no input at all.
+      if (inputRead) clearFrameInput();
     }
   } else {
     accumulator = 0;
@@ -1249,7 +1255,10 @@ function step(dt) {
   // including the enemy's hit flash.
   if (hitstopTimer > 0) {
     hitstopTimer -= dt;
-    return;
+    // Nothing read this step's input, so a press made during the freeze
+    // must survive to the first step that does -- otherwise every boss
+    // hit (3 frames of hitstop) silently ate jump presses.
+    return false;
   }
 
   // Before the player updates: the sequence owns their movement while it
@@ -1294,6 +1303,7 @@ function step(dt) {
   watchBossPhaseChanges();
   updatePickupDrops(dt);
   resolvePickups();
+  updateHeartDrops(dt);
   advanceCheckpoint();
   handleDeathTransition();
   checkComicTriggers();
@@ -1578,6 +1588,7 @@ function resolveProjectileHits() {
         const hpBefore = enemy.hp;
         const killed = damageEnemy(enemy, 1);
         if (killed) spawnDeathBurst(enemy, 1);
+        if (killed) maybeDropHeart(enemy);
         if (killed) requestShake(SHAKE.enemyDeath);
         if (killed) requestHitstop(HITSTOP.enemyDeath);
         else if (enemy.hp < hpBefore) requestHitstop(HITSTOP.enemyHit);
@@ -1604,7 +1615,13 @@ function resolveProjectileHits() {
     }
     if (projectile.life <= 0) continue;
 
-    if (graduationBoss.alive && aabbOverlap(projectile, graduationBoss)) {
+    const graduationShotBox = {
+      x: graduationBoss.x - GRADUATION.shotHitPadding,
+      y: graduationBoss.y,
+      width: graduationBoss.width + GRADUATION.shotHitPadding,
+      height: graduationBoss.height,
+    };
+    if (graduationBoss.alive && aabbOverlap(projectile, graduationShotBox)) {
       const hpBefore = graduationBoss.hp;
       damageGraduationBoss(graduationBoss, 1);
       if (graduationBoss.hp < hpBefore) {
@@ -2275,7 +2292,7 @@ function render() {
   drawPlayer(ctx, player);
   drawApproachThought(ctx);
   drawActiveThought(ctx);
-  drawReceptionSpeech(ctx, reception, player, camera.zoom, visibleWorldRect());
+  drawReceptionSpeech(ctx, reception, player, camera.zoom, visibleWorldRect(), drawThoughtBubble);
   for (const enemy of enemies) drawEnemy(ctx, enemy);
   drawTutorialLabels(ctx);
   drawResearchGolem(ctx, boss);
@@ -2352,9 +2369,20 @@ function drawUtspringFlash(ctx) {
   ctx.globalAlpha = 1;
 }
 
-// One square per hit point, filled while held. The player has had three HP
-// and no way to read them; the bosses' bars made that asymmetry obvious.
+// One heart per hit point, red while held, grey once lost. The player has
+// had three HP and no way to read them; the bosses' bars made that
+// asymmetry obvious. Falls back to plain squares if an image is missing.
 function drawPlayerHud(ctx) {
+  const full = getImage(HUD.heartFullPath);
+  const empty = getImage(HUD.heartEmptyPath);
+  if (full && empty) {
+    const height = (HUD.heartWidth * full.height) / full.width;
+    for (let i = 0; i < PLAYER.maxHp; i++) {
+      const x = HUD.marginX + i * (HUD.heartWidth + HUD.hpPipGap);
+      ctx.drawImage(i < player.hp ? full : empty, x, HUD.marginY, HUD.heartWidth, height);
+    }
+    return;
+  }
   ctx.lineWidth = 2;
   ctx.strokeStyle = HUD.borderColor;
   for (let i = 0; i < PLAYER.maxHp; i++) {
@@ -2415,7 +2443,68 @@ function drawPlatforms(ctx) {
   }
 }
 
+// Every PICKUP.heart.everyNthKill-th kill: a heart pops out of the enemy
+// and arcs to the ground, the same flight as a boss reward.
+function maybeDropHeart(enemy) {
+  killCount += 1;
+  if (killCount % PICKUP.heart.everyNthKill !== 0) return;
+  const spec = PICKUP.heart;
+  const image = getImage(spec.path);
+  const height = image ? (spec.width * image.height) / image.width : spec.width;
+  const towardPlayer = player.x < enemy.x ? -1 : 1;
+  const originX = enemy.x + enemy.width / 2 - spec.width / 2;
+  // An enemy standing on something (the tram roof, a crate, a platform)
+  // drops its heart onto that surface, straight down -- the ground in front
+  // of the tram is walled off by the tram itself. Otherwise it lands a
+  // little toward the player on the ground.
+  const feet = enemy.y + enemy.height;
+  const centerX = enemy.x + enemy.width / 2;
+  let surfaceY = WORLD.groundY;
+  for (const surface of platforms.concat(solidScenery)) {
+    const under = centerX >= surface.x && centerX <= surface.x + surface.width;
+    if (under && surface.y >= feet - 8 && surface.y < surfaceY) surfaceY = surface.y;
+  }
+  const onSurface = surfaceY < WORLD.groundY;
+  heartDrops.push({
+    x: onSurface ? originX : originX + towardPlayer * spec.landDistance,
+    y: surfaceY - height,
+    width: spec.width,
+    height,
+    dropOrigin: { x: originX, y: enemy.y + enemy.height / 2 - height / 2 },
+    dropTimer: 0,
+    clock: 0,
+  });
+}
+
+function updateHeartDrops(dt) {
+  for (const heart of heartDrops) {
+    heart.clock += dt;
+    heart.dropTimer += dt;
+    const landed = heart.dropTimer >= PICKUP.drop.duration;
+    if (landed && !player.dead && player.hp < PLAYER.maxHp && aabbOverlap(player, heart)) {
+      player.hp = Math.min(PLAYER.maxHp, player.hp + PICKUP.heart.heal);
+      heart.collected = true;
+    }
+  }
+  heartDrops = heartDrops.filter((heart) => !heart.collected);
+}
+
+function drawHeartDrops(ctx) {
+  const image = getImage(PICKUP.heart.path);
+  if (!image) return;
+  for (const heart of heartDrops) {
+    const t = Math.min(1, heart.dropTimer / PICKUP.drop.duration);
+    const from = heart.dropOrigin;
+    let x = from.x + (heart.x - from.x) * t;
+    let y = from.y + (heart.y - from.y) * t - PICKUP.drop.arcHeight * 4 * t * (1 - t);
+    if (t >= 1) y -= (Math.sin(heart.clock * PICKUP.bobSpeed) + 1) / 2 * PICKUP.bobAmplitude;
+    drawPickupGlow(ctx, heart, x + heart.width / 2, y + heart.height / 2, PICKUP.heart.glowRadius);
+    ctx.drawImage(image, Math.round(x), Math.round(y), heart.width, heart.height);
+  }
+}
+
 function drawPickups(ctx) {
+  drawHeartDrops(ctx);
   for (const pickup of pickups) {
     if (pickup.collected) continue;
     if (pickup.dropFrom && pickup.dropTimer === null) continue; // boss still standing
@@ -2453,15 +2542,15 @@ function drawPickups(ctx) {
 }
 
 // A soft pulsing light behind a pickup, so it reads as "take me".
-function drawPickupGlow(ctx, pickup, centerX, centerY) {
+function drawPickupGlow(ctx, pickup, centerX, centerY, radius = PICKUP.glow.radius) {
   const glow = PICKUP.glow;
   const pulse = (Math.sin(pickup.clock * glow.pulseSpeed) + 1) / 2;
   const alpha = glow.minAlpha + (glow.maxAlpha - glow.minAlpha) * pulse;
-  const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, glow.radius);
+  const gradient = ctx.createRadialGradient(centerX, centerY, 0, centerX, centerY, radius);
   gradient.addColorStop(0, `rgba(${glow.color}, ${alpha})`);
   gradient.addColorStop(1, `rgba(${glow.color}, 0)`);
   ctx.fillStyle = gradient;
-  ctx.fillRect(centerX - glow.radius, centerY - glow.radius, glow.radius * 2, glow.radius * 2);
+  ctx.fillRect(centerX - radius, centerY - radius, radius * 2, radius * 2);
 }
 
 // The boss's authored projectile art (config.js
