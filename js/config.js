@@ -12,7 +12,7 @@ export const CANVAS = {
 // here anyway on explicit direction (project chat, PLAN.md task 4.5): one
 // flag, one obvious place, same as every other tunable in this file.
 // Stays true until task 8.2's final content pass flips it.
-export const DRAFT_COPY = true;
+export const DRAFT_COPY = false;
 
 export const TIMESTEP = {
   hz: 60, // fixed simulation rate
@@ -2205,7 +2205,7 @@ export const RECEPTION = {
   },
   // Placeholder copy -- author-owned (AGENTS.md §10), rewrite freely.
   lines: {
-    think: 'How hard can it be to work as an administrator?',
+    think: 'How hard can it be to be an administrator in healthcare?',
     welcome: 'Welcome! Time to test your skills.',
     ready: "Let's go!",
     round1Task: 'Register patient',

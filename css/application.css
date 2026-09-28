@@ -210,6 +210,29 @@ section ul li {
   border-radius: 0.4rem;
 }
 
+.button-link {
+  display: inline-block;
+  padding: 0.5rem 0.9rem;
+  background: var(--ink);
+  color: var(--paper);
+  border-radius: 0.4rem;
+  font-weight: 600;
+  text-decoration: none;
+}
+
+.button-link:hover,
+.button-link:focus-visible {
+  background: var(--accent);
+  color: var(--ink);
+}
+
+/* Author copy still to be written, left visible so it cannot ship unnoticed. */
+.text-pending {
+  background: var(--pending-bg);
+  border-bottom: 1px dashed var(--pending-border);
+  color: var(--muted);
+}
+
 footer {
   padding-top: 0.5rem;
   padding-bottom: 2.5rem;
@@ -233,4 +256,27 @@ footer a {
     grid-template-columns: 9rem 1fr;
     gap: 1rem;
   }
+}
+
+/* Hero quick actions: the two things a recruiter most likely wants,
+   reachable without scrolling. */
+.hero-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+  margin: 1rem 0 0;
+}
+
+.button-link--quiet {
+  background: transparent;
+  color: var(--ink);
+  box-shadow: inset 0 0 0 1.5px var(--ink);
+}
+
+/* The turn in the pitch -- one line given room to land. */
+.pitch-beat {
+  font-weight: 700;
+  font-size: 1.15rem;
+  padding-left: 0.75rem;
+  border-left: 3px solid var(--accent);
 }
